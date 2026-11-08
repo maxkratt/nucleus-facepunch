@@ -1,0 +1,12 @@
+{
+  "name": "com.maxkratt.nucleus.facepunch",
+  "displayName": "Nucleus Facepunch.Steamworks",
+  "version": "0.1.0",
+  "unity": "6000.5",
+  "description": "Steam Networking Sockets transport for the Nucleus netcode engine, built on Facepunch.Steamworks. Requires Nucleus 0.5.0 or later in Assets/Nucleus.",
+  "license": "MIT",
+  "author": {
+    "name": "maxkratt",
+    "url": "https://github.com/maxkratt"
+  }
+}
