@@ -511,9 +511,10 @@ namespace Nucleus.Integrations.Facepunch
                     port = parsedPort;
             }
 
+            // NetAddress.LocalHost is the IPv6 loopback, which an IPv4 client cannot reach, so localhost is read as 127.0.0.1.
             if (string.Equals(hostText, LocalhostText, StringComparison.OrdinalIgnoreCase))
             {
-                netAddress = NetAddress.LocalHost(port);
+                netAddress = NetAddress.From(IPAddress.Loopback, port);
 
                 return true;
             }
