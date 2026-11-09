@@ -1,0 +1,20 @@
+{
+    "name": "Nucleus.Integrations.Facepunch.Editor",
+    "rootNamespace": "Nucleus.Integrations.Facepunch.Editor",
+    "references": [
+        "Nucleus.Integrations.Facepunch",
+        "Nucleus.Integrations.Unity",
+        "Nucleus.Integrations.Unity.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
