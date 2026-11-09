@@ -1,7 +1,9 @@
 using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using CodeBoost.Logging;
 using Nucleus.Connections;
@@ -62,11 +64,12 @@ namespace Nucleus.Integrations.Facepunch
         /// <remarks><see cref="UnsetSteamId"/>, or this peer's own SteamID, joins the server this same peer is running. Read at the next client start.</remarks>
         public ulong ServerSteamId;
         /// <summary>
-        /// The IPv4 address and port a client connects to in <see cref="FacepunchAddressing.IpAddress"/> and <see cref="FacepunchAddressing.FakeIp"/>, such as <c>203.0.113.7:27015</c>.
+        /// The address and port a client connects to in <see cref="FacepunchAddressing.IpAddress"/> and <see cref="FacepunchAddressing.FakeIp"/>,
+        /// such as <c>203.0.113.7:27015</c> or <c>[2001:db8::7]:27015</c>.
         /// </summary>
         /// <remarks>
         /// <see langword="null"/> or empty joins the server this same peer is running. Without a port, <see cref="Configuration.Port"/> is
-        /// used, and <c>localhost</c> is the IPv4 loopback; host names are not looked up. Read at the next client start.
+        /// used, and <c>localhost</c> is the IPv4 loopback; host names are not looked up. A fake IP is always IPv4. Read at the next client start.
         /// </remarks>
         public string ServerAddress;
         /// <summary>
@@ -194,6 +197,14 @@ namespace Nucleus.Integrations.Facepunch
         /// The share of the send rate each lane gets while both have data waiting, three to one in favour of unreliable state.
         /// </summary>
         private static readonly ushort[] LaneWeights = { 1, 3 };
+        /// <summary>
+        /// The length of the IPv6 form Steam stores every address in, an IPv4 address included.
+        /// </summary>
+        private const int IPv6AddressBytes = 16;
+        /// <summary>
+        /// The length of Steam's address, the IPv6 form followed by the port.
+        /// </summary>
+        private const int NetAddressBytes = IPv6AddressBytes + sizeof(ushort);
 
         /// <inheritdoc/>
         /// <remarks>Registers the frame's flush once both sockets are rented and initialized.</remarks>
@@ -478,9 +489,9 @@ namespace Nucleus.Integrations.Facepunch
         }
 
         /// <summary>
-        /// Reads an IPv4 address, with or without a port, into Steam's form.
+        /// Reads an IPv4 or IPv6 address, with or without a port, into Steam's form.
         /// </summary>
-        /// <param name="text">The address, such as <c>203.0.113.7</c> or <c>203.0.113.7:27015</c>. <c>localhost</c> is the IPv4 loopback, and empty or <see langword="null"/> is every interface.</param>
+        /// <param name="text">The address, such as <c>203.0.113.7</c>, <c>203.0.113.7:27015</c>, <c>2001:db8::7</c> or <c>[2001:db8::7]:27015</c>. <c>localhost</c> is the IPv4 loopback, and empty or <see langword="null"/> is every interface.</param>
         /// <param name="defaultPort">The port used when <paramref name="text"/> names none.</param>
         /// <param name="netAddress">The address read.</param>
         /// <param name="isPortForced">True to use <paramref name="defaultPort"/> even when <paramref name="text"/> names a port.</param>
@@ -497,14 +508,38 @@ namespace Nucleus.Integrations.Facepunch
             }
 
             string hostText = text;
-            ushort port = defaultPort;
+            string portText = null;
             int separatorIndex = text.IndexOf(':');
 
-            if (separatorIndex >= 0)
+            // An IPv6 address carries colons of its own, so its port is written after brackets: [2001:db8::7]:27015.
+            if (text[0] == '[')
+            {
+                int closeIndex = text.IndexOf(']');
+
+                if (closeIndex < 0)
+                    return false;
+
+                hostText = text.Substring(1, closeIndex - 1);
+
+                if (closeIndex + 1 < text.Length)
+                {
+                    if (text[closeIndex + 1] != ':')
+                        return false;
+
+                    portText = text.Substring(closeIndex + 2);
+                }
+            }
+            else if (separatorIndex >= 0 && separatorIndex == text.LastIndexOf(':'))
             {
                 hostText = text.Substring(0, separatorIndex);
+                portText = text.Substring(separatorIndex + 1);
+            }
 
-                if (!ushort.TryParse(text.Substring(separatorIndex + 1), out ushort parsedPort))
+            ushort port = defaultPort;
+
+            if (portText is not null)
+            {
+                if (!ushort.TryParse(portText, out ushort parsedPort))
                     return false;
 
                 if (!isPortForced)
@@ -519,12 +554,43 @@ namespace Nucleus.Integrations.Facepunch
                 return true;
             }
 
-            if (!IPAddress.TryParse(hostText, out IPAddress ipAddress) || ipAddress.AddressFamily is not AddressFamily.InterNetwork)
+            if (!IPAddress.TryParse(hostText, out IPAddress ipAddress))
                 return false;
 
-            netAddress = NetAddress.From(ipAddress, port);
+            switch (ipAddress.AddressFamily)
+            {
+                case AddressFamily.InterNetwork:
+                    netAddress = NetAddress.From(ipAddress, port);
 
-            return true;
+                    return true;
+                // A scope, as in fe80::1%3, has no place in Steam's address, so a link-local address that needs one is refused.
+                case AddressFamily.InterNetworkV6 when ipAddress.ScopeId == 0:
+                    netAddress = CreateIPv6Address(ipAddress, port);
+
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Builds Steam's form of an IPv6 address.
+        /// </summary>
+        /// <param name="ipAddress">The IPv6 address.</param>
+        /// <param name="port">The port.</param>
+        /// <returns>The address.</returns>
+        /// <remarks>
+        /// Facepunch 2.5.2's <see cref="NetAddress.From(IPAddress, ushort)"/> throws for IPv6, so the address is written in Steam's own layout,
+        /// the one <see cref="NetAddress"/> declares: the 16 address bytes in network order, then the port in the machine's order, which is
+        /// little endian on every platform Steam ships for.
+        /// </remarks>
+        private static NetAddress CreateIPv6Address(IPAddress ipAddress, ushort port)
+        {
+            Span<byte> addressBytes = stackalloc byte[NetAddressBytes];
+            ipAddress.TryWriteBytes(addressBytes, out int _);
+            BinaryPrimitives.WriteUInt16LittleEndian(addressBytes.Slice(IPv6AddressBytes), port);
+
+            return MemoryMarshal.Read<NetAddress>(addressBytes);
         }
 
         /// <inheritdoc/>

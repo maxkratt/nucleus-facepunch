@@ -14,7 +14,7 @@ namespace Nucleus.Integrations.Facepunch
         [InspectorName("Steam ID")]
         SteamId,
         /// <summary>
-        /// A real IPv4 address and UDP port, dialled directly, for a dedicated server with a public port, or two processes on one machine.
+        /// A real IPv4 or IPv6 address and UDP port, dialled directly, for a dedicated server with a public port, or two processes on one machine.
         /// </summary>
         [InspectorName("IP Address")]
         IpAddress,

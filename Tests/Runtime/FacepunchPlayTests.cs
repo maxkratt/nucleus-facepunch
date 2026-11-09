@@ -26,8 +26,10 @@ namespace Nucleus.Integrations.Facepunch.Tests
     /// <remarks>
     /// Skipped unless the Steam client is running, since there is no mock of Steam. Every peer runs in this process on one account, so
     /// the remote client dials the server by <see cref="FacepunchAddressing.IpAddress"/> on the loopback: a client targeting its own SteamID
-    /// would be read as joining its own server. Steam is initialized when nothing else has, shut down again by the case that did, and
-    /// its callbacks are pumped by every wait, since no bootstrap runs here.
+    /// would be read as joining its own server. Steam is initialized when nothing else has and its callbacks are pumped by every wait,
+    /// since no bootstrap runs here. It is never shut down: <c>SteamAPI_Shutdown</c> called a frame after a case closed its sockets once
+    /// deadlocked inside steamclient64, the main thread holding a Steam lock while it waited on a Steam worker thread queued for that same
+    /// lock. A later run in the same editor finds Steam still up, with domain reload on or off, and the editor's exit releases it.
     /// </remarks>
     public class FacepunchPlayTests
     {
@@ -81,10 +83,6 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// </summary>
         private readonly List<GameObject> _createdObjects = new();
         /// <summary>
-        /// True when this case initialized Steam, and so shuts it down at teardown.
-        /// </summary>
-        private bool _isSteamInitializedByTest;
-        /// <summary>
         /// The reason the kicked client received, or <see langword="null"/> before one arrives.
         /// </summary>
         private string _receivedKickReason;
@@ -118,12 +116,10 @@ namespace Nucleus.Integrations.Facepunch.Tests
             {
                 Assert.Ignore($"Steam would not initialize, and must be running: [{exception.Message}].");
             }
-
-            _isSteamInitializedByTest = true;
         }
 
         /// <summary>
-        /// Destroys every object the case created, which shuts their peers down, then shuts Steam down if the case started it.
+        /// Destroys every object the case created, which shuts their peers down, and leaves Steam running.
         /// </summary>
         /// <returns>The coroutine driving the teardown.</returns>
         [UnityTearDown]
@@ -144,11 +140,6 @@ namespace Nucleus.Integrations.Facepunch.Tests
             // Lets the destroyed peers close their links while Steam can still send the close.
             yield return null;
             SteamClient.RunCallbacks();
-
-            if (_isSteamInitializedByTest)
-                SteamClient.Shutdown();
-
-            _isSteamInitializedByTest = false;
         }
 
         /// <summary>
@@ -226,6 +217,22 @@ namespace Nucleus.Integrations.Facepunch.Tests
             Assert.IsTrue(IsClientAuthenticated(clientCoreManager), "The remote client never authenticated.");
             Assert.IsTrue(TryGetRemoteClientConnection(serverCoreManager, out Connection remoteClientConnection), "The server holds no remote client.");
             Assert.AreEqual(SteamClient.SteamId.Value.ToString(), remoteClientConnection.RemoteAddress, "The remote client was not admitted under the account's SteamID.");
+        }
+
+        /// <summary>
+        /// A client joins by IPv6, both to a server bound to the IPv6 loopback and to one listening on every interface, and by IPv4 to the
+        /// latter, so one server serves both families.
+        /// </summary>
+        /// <param name="addressPair">The server's bind address, then the host the client dials.</param>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator RemoteClient_JoinsByEitherAddressFamily_IsAdmitted([ValueSource(nameof(GetAddressPairs))] string[] addressPair)
+        {
+            yield return StartServerAndRemoteClient(out UnityCoreManager serverCoreManager, out UnityCoreManager clientCoreManager, out UnityTransportManager _, bindAddress: addressPair[0], clientHost: addressPair[1]);
+
+            Assert.IsTrue(IsClientAuthenticated(clientCoreManager), $"The client dialling [{addressPair[1]}] never authenticated with a server bound to [{addressPair[0]}].");
+            Assert.IsTrue(TryGetRemoteClientConnection(serverCoreManager, out Connection _), "The server holds no remote client.");
         }
 
         /// <summary>
@@ -573,15 +580,17 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// <param name="sendRateMinimumBytesPerSecond">The send rate floor the server gives its connections, or <see cref="FacepunchSockets.UnsetSendSetting"/> for Steam's.</param>
         /// <param name="isShareSteamIdsEnabled">Whether the server shares SteamIDs with its clients.</param>
         /// <param name="isPerConnectionReceiveEnabled">Whether the server receives each client through its own call.</param>
+        /// <param name="bindAddress">The address the server listens on.</param>
+        /// <param name="clientHost">The host the client dials, with the port added, an IPv6 one written in brackets.</param>
         /// <returns>The coroutine driving the start.</returns>
-        private IEnumerator StartServerAndRemoteClient(out UnityCoreManager serverCoreManager, out UnityCoreManager clientCoreManager, out UnityTransportManager clientTransportManager, uint sendRateMinimumBytesPerSecond = FacepunchSockets.UnsetSendSetting, bool isShareSteamIdsEnabled = false, bool isPerConnectionReceiveEnabled = false)
+        private IEnumerator StartServerAndRemoteClient(out UnityCoreManager serverCoreManager, out UnityCoreManager clientCoreManager, out UnityTransportManager clientTransportManager, uint sendRateMinimumBytesPerSecond = FacepunchSockets.UnsetSendSetting, bool isShareSteamIdsEnabled = false, bool isPerConnectionReceiveEnabled = false, string bindAddress = "localhost", string clientHost = "127.0.0.1")
         {
             ushort port = ProbeFreeUdpPort();
 
             serverCoreManager = NewPeer("SteamServer", out UnityTransportManager serverTransportManager, out FacepunchTransport serverFacepunchTransport);
-            serverFacepunchTransport.BindAddress = "localhost";
+            serverFacepunchTransport.BindAddress = bindAddress;
             clientCoreManager = NewPeer("SteamClient", out clientTransportManager, out FacepunchTransport clientFacepunchTransport);
-            clientFacepunchTransport.ServerAddress = $"127.0.0.1:{port}";
+            clientFacepunchTransport.ServerAddress = $"{clientHost}:{port}";
 
             return StartServerAndRemoteClient(serverCoreManager, serverTransportManager, clientCoreManager, clientTransportManager, port, sendRateMinimumBytesPerSecond, isShareSteamIdsEnabled, isPerConnectionReceiveEnabled);
         }
@@ -702,6 +711,17 @@ namespace Nucleus.Integrations.Facepunch.Tests
             remoteClientConnection = null;
 
             return false;
+        }
+
+        /// <summary>
+        /// Lists the address pairs the family case runs: the server's bind address, then the host the client dials.
+        /// </summary>
+        /// <returns>The pairs.</returns>
+        private static IEnumerable<string[]> GetAddressPairs()
+        {
+            yield return new[] { "::1", "[::1]" };
+            yield return new[] { string.Empty, "[::1]" };
+            yield return new[] { string.Empty, "127.0.0.1" };
         }
 
         /// <summary>

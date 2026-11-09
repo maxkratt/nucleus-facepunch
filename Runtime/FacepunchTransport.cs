@@ -47,7 +47,7 @@ namespace Nucleus.Integrations.Facepunch
             }
         }
         /// <summary>
-        /// The local address an <see cref="FacepunchAddressing.IpAddress"/> server listens on: an IPv4 address, <c>localhost</c>, or empty to listen on every interface.
+        /// The local address an <see cref="FacepunchAddressing.IpAddress"/> server listens on: an IPv4 or IPv6 address, <c>localhost</c>, or empty to listen on every interface.
         /// </summary>
         /// <remarks>Accepted at any time and applied at the next server start.</remarks>
         public string BindAddress
@@ -70,7 +70,7 @@ namespace Nucleus.Integrations.Facepunch
         /// How the server is reached.
         /// </summary>
         [SerializeField]
-        [Tooltip("How the server is reached: by SteamID through Steam's relay, by IPv4 address, or by a fake IP Steam grants a game server.")]
+        [Tooltip("How the server is reached: by SteamID through Steam's relay, by IPv4 or IPv6 address, or by a fake IP Steam grants a game server.")]
         private FacepunchAddressing _addressing;
         /// <summary>
         /// The SteamID64 of the server a client connects to.
@@ -82,7 +82,7 @@ namespace Nucleus.Integrations.Facepunch
         /// The address and port a client connects to in <see cref="FacepunchAddressing.IpAddress"/> and <see cref="FacepunchAddressing.FakeIp"/>.
         /// </summary>
         [SerializeField]
-        [Tooltip("IPv4 address and port a client connects to, such as 203.0.113.7:27015; for a fake IP, the address the server logs. Host names are not looked up. Empty joins this peer's own server.")]
+        [Tooltip("IP address and port a client connects to, such as 203.0.113.7:27015 or [2001:db8::7]:27015; for a fake IP, the address the server logs. Host names are not looked up. Empty joins this peer's own server.")]
         private string _serverAddress = string.Empty;
         /// <summary>
         /// The port server and clients agree on: the Steam virtual port in <see cref="FacepunchAddressing.SteamId"/>, the UDP port in <see cref="FacepunchAddressing.IpAddress"/>.
@@ -91,10 +91,10 @@ namespace Nucleus.Integrations.Facepunch
         [Tooltip("Port server and clients agree on: Steam's virtual port by SteamID, the UDP port the server listens on by IP address.")]
         private ushort _port = 27015;
         /// <summary>
-        /// The local IPv4 address an <see cref="FacepunchAddressing.IpAddress"/> server listens on.
+        /// The local IPv4 or IPv6 address an <see cref="FacepunchAddressing.IpAddress"/> server listens on.
         /// </summary>
         [SerializeField]
-        [Tooltip("Local IPv4 address, or localhost, an IP address server listens on. Empty listens on every interface.")]
+        [Tooltip("Local IPv4 or IPv6 address, or localhost, an IP address server listens on. Empty listens on every interface.")]
         private string _bindAddress = string.Empty;
         /// <summary>
         /// Seconds a link may spend connecting before Steam gives up on it.

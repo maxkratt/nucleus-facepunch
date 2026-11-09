@@ -367,7 +367,7 @@ namespace Nucleus.Integrations.Facepunch
                 if (FacepunchSockets.TryParseIpAddress(serverAddress.Trim(), _facepunchSockets.Configuration.Port, out NetAddress netAddress, isPortForced: false))
                     return SteamNetworkingSockets.ConnectNormal(netAddress, this);
 
-                Logger<FacepunchClientSocket>.LogError($"[{serverAddress}] is not an IPv4 address, such as 203.0.113.7 or 203.0.113.7:27015. Host names are not looked up.");
+                Logger<FacepunchClientSocket>.LogError($"[{serverAddress}] is not an IP address, such as 203.0.113.7:27015 or [2001:db8::7]:27015. Host names are not looked up.");
 
                 return null;
             }
