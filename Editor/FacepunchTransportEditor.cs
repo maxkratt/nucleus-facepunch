@@ -335,6 +335,7 @@ namespace Nucleus.Integrations.Facepunch.Editor
         {
             SerializedProperty connectingTimeoutSecondsSerializedProperty = serializedObject.FindProperty("_connectingTimeoutSeconds");
             SerializedProperty idleTimeoutSecondsSerializedProperty = serializedObject.FindProperty("_idleTimeoutSeconds");
+            SerializedProperty sendRateMinimumSerializedProperty = serializedObject.FindProperty("_sendRateMinimumBytesPerSecond");
             SerializedProperty sendRateMaximumSerializedProperty = serializedObject.FindProperty("_sendRateMaximumBytesPerSecond");
             SerializedProperty sendBufferSizeSerializedProperty = serializedObject.FindProperty("_sendBufferSizeBytes");
             SerializedProperty perConnectionReceiveEnabledSerializedProperty = serializedObject.FindProperty("_perConnectionReceiveEnabled");
@@ -350,11 +351,18 @@ namespace Nucleus.Integrations.Facepunch.Editor
                 EditorGUILayout.PropertyField(perConnectionReceiveEnabledSerializedProperty, new GUIContent("Per-Connection Receive", perConnectionReceiveEnabledSerializedProperty.tooltip));
                 DrawPropertyFieldWithUnit(connectingTimeoutSecondsSerializedProperty, "Connecting Timeout", "s");
                 DrawPropertyFieldWithUnit(idleTimeoutSecondsSerializedProperty, "Idle Timeout", "s");
+                DrawKibibyteField(sendRateMinimumSerializedProperty, "Minimum Send Rate", "KiB/s");
                 DrawKibibyteField(sendRateMaximumSerializedProperty, "Maximum Send Rate", "KiB/s");
                 DrawKibibyteField(sendBufferSizeSerializedProperty, "Send Buffer Size", "KiB");
             }
 
             EditorGUILayout.HelpBox("Timeouts and send settings apply to every Steam connection in this process, because Facepunch has no per-connection options.", MessageType.None);
+
+            uint sendRateMinimumBytes = sendRateMinimumSerializedProperty.uintValue;
+            uint sendRateMaximumBytes = sendRateMaximumSerializedProperty.uintValue;
+
+            if (sendRateMinimumBytes is not UnsetSendSetting && sendRateMaximumBytes is not UnsetSendSetting && sendRateMinimumBytes > sendRateMaximumBytes)
+                EditorGUILayout.HelpBox("The minimum send rate is above the maximum. Lower it, or raise the maximum to match.", MessageType.Warning);
 
             uint sendBufferSizeBytes = sendBufferSizeSerializedProperty.uintValue;
 

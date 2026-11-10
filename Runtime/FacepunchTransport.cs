@@ -129,6 +129,17 @@ namespace Nucleus.Integrations.Facepunch
         [Tooltip("Receive each client through its own call. Avoids 232 bytes of garbage per received message on IL2CPP servers, at one extra native call per client per frame. Makes no difference to garbage on Mono.")]
         private bool _perConnectionReceiveEnabled;
         /// <summary>
+        /// The send rate Steam never drops below on a connection, in bytes per second.
+        /// </summary>
+        /// <remarks>
+        /// Process-wide. A <see cref="FacepunchAddressing.SteamId"/> server sends each client at this rate, not at the maximum, so it
+        /// decides how long a large reliable message or a burst takes to reach a client there. Defaults to Steam's 256 KiB a second,
+        /// because every client of a listen server gets the rate at once and together they can exceed a home upload.
+        /// </remarks>
+        [SerializeField]
+        [Tooltip("Rate Steam never sends slower than on a connection. A SteamID server sends each client at this rate, so raise it to deliver large messages faster, within the host's upload across all clients. Applies to the whole process. Zero leaves Steam's value alone.")]
+        private uint _sendRateMinimumBytesPerSecond = 256 * 1024;
+        /// <summary>
         /// The send rate Steam never rises above on a connection, in bytes per second.
         /// </summary>
         /// <remarks>Process-wide. Defaults to 4 MiB a second rather than Steam's 256 KiB, so a late join or a large burst can use a good link.</remarks>
@@ -179,6 +190,7 @@ namespace Nucleus.Integrations.Facepunch
             _facepunchSockets.MaximumClientPacketBytes = _maximumClientPacketBytes;
             _facepunchSockets.PerConnectionReceiveEnabled = _perConnectionReceiveEnabled;
             _facepunchSockets.ShareSteamIdsEnabled = _shareSteamIdsEnabled;
+            _facepunchSockets.SendRateMinimumBytesPerSecond = _sendRateMinimumBytesPerSecond;
             _facepunchSockets.SendRateMaximumBytesPerSecond = _sendRateMaximumBytesPerSecond;
             _facepunchSockets.SendBufferSizeBytes = _sendBufferSizeBytes;
 
