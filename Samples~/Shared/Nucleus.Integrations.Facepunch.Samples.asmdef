@@ -1,0 +1,23 @@
+{
+    "name": "Nucleus.Integrations.Facepunch.Samples",
+    "rootNamespace": "Nucleus.Integrations.Facepunch.Samples",
+    "references": [
+        "Nucleus.Integrations.Facepunch",
+        "Nucleus.Integrations.Unity"
+    ],
+    "includePlatforms": [
+        "Editor",
+        "LinuxStandalone64",
+        "macOSStandalone",
+        "WindowsStandalone32",
+        "WindowsStandalone64"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
