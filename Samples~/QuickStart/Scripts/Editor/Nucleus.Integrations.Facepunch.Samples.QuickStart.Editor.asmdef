@@ -1,0 +1,19 @@
+{
+    "name": "Nucleus.Integrations.Facepunch.Samples.QuickStart.Editor",
+    "rootNamespace": "Nucleus.Integrations.Facepunch.Samples.QuickStart.Editor",
+    "references": [
+        "Nucleus.Integrations.Facepunch.Samples.QuickStart",
+        "Nucleus.Integrations.Unity.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
