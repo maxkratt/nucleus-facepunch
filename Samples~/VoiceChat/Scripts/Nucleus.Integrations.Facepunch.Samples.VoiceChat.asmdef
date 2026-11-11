@@ -1,0 +1,25 @@
+{
+    "name": "Nucleus.Integrations.Facepunch.Samples.VoiceChat",
+    "rootNamespace": "Nucleus.Integrations.Facepunch.Samples.VoiceChat",
+    "references": [
+        "Nucleus.Integrations.Facepunch",
+        "Nucleus.Integrations.Facepunch.Samples",
+        "Nucleus.Integrations.Unity",
+        "Unity.InputSystem"
+    ],
+    "includePlatforms": [
+        "Editor",
+        "LinuxStandalone64",
+        "macOSStandalone",
+        "WindowsStandalone32",
+        "WindowsStandalone64"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
