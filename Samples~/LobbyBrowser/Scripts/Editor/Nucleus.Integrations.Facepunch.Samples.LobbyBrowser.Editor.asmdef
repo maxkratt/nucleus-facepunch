@@ -1,0 +1,19 @@
+{
+    "name": "Nucleus.Integrations.Facepunch.Samples.LobbyBrowser.Editor",
+    "rootNamespace": "Nucleus.Integrations.Facepunch.Samples.LobbyBrowser.Editor",
+    "references": [
+        "Nucleus.Integrations.Facepunch.Samples.LobbyBrowser",
+        "Nucleus.Integrations.Unity.Editor"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
