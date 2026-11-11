@@ -7,4 +7,4 @@ using Nucleus.Serializers;
 [assembly: InternalsVisibleTo("Nucleus.Integrations.Facepunch.Tests")]
 
 // A game's main assembly defaults to bundle 0, so this one takes an id near the top of the space, clear of the Unity integration's own ids.
-[assembly: NetworkBundle((ushort)(NetworkTypeRegistry.FrameworkBundleId - 484))]
+[assembly: NetworkBundle((ushort)(NetworkTypeRegistry.FrameworkBundleId - 490))]
