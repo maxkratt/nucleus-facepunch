@@ -427,8 +427,11 @@ namespace Nucleus.Integrations.Facepunch
 
             Result result = SteamNetworkingSockets.GetFakeIP(FakePortIndex, out NetAddress netAddress);
 
+            // A game server's grant waits for its logon, which can take longer than the timeout; the grant still raises the event.
             if (result is Result.OK)
                 ApplyFakeIp(netAddress);
+            else if (result is Result.Busy)
+                Logger<FacepunchServerSocket>.LogWarning($"Steam has not answered the fake address request after [{FakeIpTimeoutSeconds}] seconds. The address is applied when Steam grants it.");
             else
                 Logger<FacepunchServerSocket>.LogError($"Steam did not grant a fake address: [{result}]. Clients cannot reach this server by one.");
         }
