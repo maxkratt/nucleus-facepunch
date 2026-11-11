@@ -25,7 +25,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.VoiceChat
     /// would arrive too late to play. It adopts the system the <see cref="Components.NetworkTransform"/> declares. Facepunch keeps
     /// Steam's call that tells the friends list a player is speaking in game internal, so the friends list is not told.
     /// </remarks>
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/VoiceChat/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/VoiceChat/README.md")]
     public class VoiceChatPlayer : NucleusBehaviour
     {
         /// <summary>

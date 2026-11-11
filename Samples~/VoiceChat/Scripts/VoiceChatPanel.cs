@@ -17,7 +17,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.VoiceChat
     /// <see cref="FacepunchAddressing.SteamId"/>.
     /// </remarks>
     [DisallowMultipleComponent]
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/VoiceChat/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/VoiceChat/README.md")]
     public class VoiceChatPanel : MonoBehaviour
     {
         /// <summary>

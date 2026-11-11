@@ -14,7 +14,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.QuickStart
     /// The scene's <see cref="NetworkPlayerSpawner"/> spawns it on the server and hands control to its player. It adopts the system
     /// the <see cref="Components.NetworkTransform"/> declares rather than declaring one, so the capsule has a single system.
     /// </remarks>
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/QuickStart/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/QuickStart/README.md")]
     public class QuickStartPlayer : NucleusBehaviour
     {
         /// <summary>

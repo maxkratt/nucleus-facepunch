@@ -23,7 +23,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.Lobbies
     /// the lobby to another member, but the server went with the host, so each member leaves the lobby once its client stops.
     /// </remarks>
     [DisallowMultipleComponent]
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/Lobbies/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/Lobbies/README.md")]
     public class LobbiesPanel : MonoBehaviour
     {
         /// <summary>

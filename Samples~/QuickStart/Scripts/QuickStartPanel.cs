@@ -17,7 +17,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.QuickStart
     /// <see cref="FacepunchAddressing.SteamId"/>.
     /// </remarks>
     [DisallowMultipleComponent]
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/QuickStart/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/QuickStart/README.md")]
     public class QuickStartPanel : MonoBehaviour
     {
         /// <summary>

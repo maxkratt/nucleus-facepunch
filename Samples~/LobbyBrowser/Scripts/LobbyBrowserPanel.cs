@@ -21,7 +21,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
     /// connects to the lobby owner through <see cref="FacepunchTransport.ServerSteamId"/>, and leaves the lobby once its client stops.
     /// </remarks>
     [DisallowMultipleComponent]
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/LobbyBrowser/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/LobbyBrowser/README.md")]
     public class LobbyBrowserPanel : MonoBehaviour
     {
         /// <summary>

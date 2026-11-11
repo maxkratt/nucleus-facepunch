@@ -15,7 +15,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.DedicatedServer
     /// server's entry, so a client needs no second query to learn it.
     /// </remarks>
     [DisallowMultipleComponent]
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/DedicatedServer/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/DedicatedServer/README.md")]
     public class DedicatedServerListing : MonoBehaviour
     {
         /// <summary>

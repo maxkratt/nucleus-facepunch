@@ -19,7 +19,7 @@ namespace Nucleus.Integrations.Facepunch.Samples
     /// </remarks>
     [DefaultExecutionOrder(-1000)]
     [DisallowMultipleComponent]
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/Shared/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/Shared/README.md")]
     public class SteamBootstrap : MonoBehaviour
     {
         /// <summary>

@@ -21,7 +21,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.DedicatedServer
     /// the server.
     /// </remarks>
     [DisallowMultipleComponent]
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/DedicatedServer/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/DedicatedServer/README.md")]
     public class ServerBrowserPanel : MonoBehaviour
     {
         /// <summary>

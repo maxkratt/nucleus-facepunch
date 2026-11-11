@@ -18,7 +18,7 @@ namespace Nucleus.Integrations.Facepunch.Samples
     /// The behaviour declares its own system beside the object's other one, grouped under the same
     /// <see cref="NetworkSystemObject"/>, so the player spawner hands both to the player together.
     /// </remarks>
-    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/main/Samples~/Shared/README.md")]
+    [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/Shared/README.md")]
     public class PlayerNameTag : NucleusBehaviour<PlayerNameTagComponent>
     {
         /// <summary>
