@@ -286,6 +286,7 @@ namespace Nucleus.Integrations.Facepunch
         /// <param name="connection">A remote client on this peer's server, or this peer's own client Connection for its link to the server.</param>
         /// <param name="linkStatus">The status, when there is a Steam link to read.</param>
         /// <returns><see langword="true"/> when the Connection rides a Steam link; the host's own client, paired in process, has none.</returns>
+        /// <remarks>Facepunch allocates on every status read, 96 bytes on Mono and 192 on IL2CPP, so read it a few times a second rather than every frame.</remarks>
         public bool TryGetLinkStatus(Connection connection, out SteamLinkStatus linkStatus)
         {
             linkStatus = default;

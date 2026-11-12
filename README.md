@@ -94,7 +94,7 @@ These live on `FacepunchSockets`, which `AddToAsync` returns and `TransportManag
 
 - `ConnectingClientFilter`, a `bool (ulong steamId)` called on the network loop thread before the engine sees a client. Return `false` to refuse it, for a ban list or lobby members only.
 - `ServerFakeAddress`, the address Steam grants a Fake IP server once it is ready. A game server's grant can come after its logon, seconds after the start; a slow grant is logged as a warning and applied when it arrives.
-- `TryGetLinkStatus(connection, out SteamLinkStatus)`, Steam's ping, connection quality and pending bytes for one link.
+- `TryGetLinkStatus(connection, out SteamLinkStatus)`, Steam's ping, connection quality and pending bytes for one link. Facepunch allocates 96 to 192 bytes on each read, so poll it a few times a second, not every frame.
 - `SetNetworkConditions` simulates latency and loss through Steam's own settings, mid-session too. They are process wide, and the host's own client is never delayed: judge lag from a separate client.
 - `RefusedReliableSendCount`, `RefusedUnreliableSendCount`, `LargestReliablePacketBytes`, `LargestUnreliablePacketBytes` and `ServerReceiveMicroseconds`, for diagnostics.
 

@@ -35,6 +35,14 @@ namespace Nucleus.Integrations.Facepunch
         /// <remarks>An entry lives until its connection closes, so a link that sends reliably allocates its queue once.</remarks>
         private readonly Dictionary<SteamConnection, Queue<QueuedSend>> _queuedReliableSends = new();
         /// <summary>
+        /// The room each connection's send buffer had at its last status read, less every message handed to Steam since, in bytes.
+        /// </summary>
+        /// <remarks>
+        /// Reading the status allocates in Facepunch, so it is read only when the next reliable message does not fit this estimate. Steam
+        /// only drains its queue between reads, so the estimate can understate the room but never overstate it.
+        /// </remarks>
+        private readonly Dictionary<SteamConnection, int> _estimatedBudgetBytes = new();
+        /// <summary>
         /// The reused buffer each unreliable message is built in, grown to the largest message seen.
         /// </summary>
         private byte[] _unreliableBuffer = new byte[DefaultUnreliableBufferBytes];
@@ -104,8 +112,16 @@ namespace Nucleus.Integrations.Facepunch
 
             foreach (KeyValuePair<SteamConnection, Queue<QueuedSend>> queuedReliableSends in _queuedReliableSends)
             {
-                if (queuedReliableSends.Value.Count > 0)
-                    ReleaseQueuedReliableSends(queuedReliableSends.Key, queuedReliableSends.Value, GetSendBudgetBytes(queuedReliableSends.Key));
+                if (queuedReliableSends.Value.Count == 0)
+                    continue;
+
+                SteamConnection steamConnection = queuedReliableSends.Key;
+                int costBytes = queuedReliableSends.Value.Peek().MessageBytes + ReliableHeaderAllowanceBytes;
+
+                if (!_estimatedBudgetBytes.TryGetValue(steamConnection, out int budgetBytes) || costBytes > budgetBytes)
+                    budgetBytes = GetSendBudgetBytes(steamConnection);
+
+                _estimatedBudgetBytes[steamConnection] = ReleaseQueuedReliableSends(steamConnection, queuedReliableSends.Value, budgetBytes);
             }
         }
 
@@ -115,6 +131,8 @@ namespace Nucleus.Integrations.Facepunch
         /// <param name="steamConnection">The closed connection.</param>
         public void Discard(SteamConnection steamConnection)
         {
+            _estimatedBudgetBytes.Remove(steamConnection);
+
             if (!_queuedReliableSends.Remove(steamConnection, out Queue<QueuedSend> queuedReliableSends))
                 return;
 
@@ -134,6 +152,7 @@ namespace Nucleus.Integrations.Facepunch
             }
 
             _queuedReliableSends.Clear();
+            _estimatedBudgetBytes.Clear();
             RefusedReliableSends.Clear();
         }
 
@@ -182,6 +201,10 @@ namespace Nucleus.Integrations.Facepunch
 
             Result result = steamConnection.SendMessage(_unreliableBuffer, 0, messageBytes, UnreliableSendType, FacepunchMessages.UnreliableLane);
 
+            // Unreliable messages share the send buffer, so they lower the estimate too; it stops at zero, which forces the next read.
+            if (_estimatedBudgetBytes.TryGetValue(steamConnection, out int budgetBytes))
+                _estimatedBudgetBytes[steamConnection] = Math.Max(budgetBytes - messageBytes - ReliableHeaderAllowanceBytes, 0);
+
             // A link the peer has already closed has no one to reach, and Steam's report of the close is on its way.
             if (result is not Result.OK and not Result.NoConnection)
                 facepunchSockets.RefusedUnreliableSendCount++;
@@ -212,8 +235,9 @@ namespace Nucleus.Integrations.Facepunch
         /// <param name="steamConnection">The connection.</param>
         /// <param name="queuedReliableSends">The connection's queued messages.</param>
         /// <param name="budgetBytes">The room left in the send buffer, in bytes; <see cref="int.MaxValue"/> sends them all.</param>
+        /// <returns>The room left once the released messages are counted against it, in bytes.</returns>
         /// <remarks>One message larger than the whole buffer would never fit, so it goes once Steam's queue is empty, and Steam's refusal reports it rather than the link waiting forever.</remarks>
-        private void ReleaseQueuedReliableSends(SteamConnection steamConnection, Queue<QueuedSend> queuedReliableSends, int budgetBytes)
+        private int ReleaseQueuedReliableSends(SteamConnection steamConnection, Queue<QueuedSend> queuedReliableSends, int budgetBytes)
         {
             bool isBufferEmpty = budgetBytes >= SendBufferBytes;
 
@@ -237,6 +261,8 @@ namespace Nucleus.Integrations.Facepunch
                 budgetBytes -= costBytes;
                 isBufferEmpty = false;
             }
+
+            return budgetBytes;
         }
 
         /// <summary>
