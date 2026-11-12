@@ -165,6 +165,8 @@ The Quick Start and Voice Chat samples spawn networked prefabs: after importing 
 
 The PlayMode tests (`Nucleus.Integrations.Facepunch.Tests`) run in the Test Runner when the package is listed under `testables` in `Packages/manifest.json`. They skip unless Steam is running.
 
+<img src="https://raw.githubusercontent.com/AnkleBreaker-Studio/unity-mcp-plugin/main/icon.png" width="16" alt=""> Testing Powered by [AnkleBreaker MCP](https://github.com/AnkleBreaker-Studio/unity-mcp-plugin).
+
 ## Licence
 
 MIT, see [LICENSE.md](LICENSE.md). Facepunch.Steamworks is MIT, see [its licence](Runtime/Plugins/Facepunch.Steamworks/LICENSE.txt). Steam's native libraries are Valve's, distributed under the Steamworks SDK terms.
