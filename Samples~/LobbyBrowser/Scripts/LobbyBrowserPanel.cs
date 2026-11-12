@@ -245,8 +245,31 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
 
             _statusText = "Creating the lobby.";
 
-            // The outcome is handled in OnLobbyCreated, which also carries Steam's reason for a refusal; the task's own value drops it.
-            await SteamMatchmaking.CreateLobbyAsync(_maximumLobbyMembers);
+            // A refusal is reported in OnLobbyCreated, which carries Steam's reason; the task answers null for it.
+            Lobby? createdLobby = await SteamMatchmaking.CreateLobbyAsync(_maximumLobbyMembers);
+
+            // The user pressed Leave, and perhaps hosted again, or the scene closed, while Steam was creating the lobby.
+            // Steam's lobby event cannot tell one create from another, so the lobby is adopted or left here.
+            if (this == null || leaveCount != _leaveCount)
+            {
+                createdLobby?.Leave();
+
+                return;
+            }
+
+            if (createdLobby is not Lobby lobby)
+                return;
+
+            _isLobbyOwner = true;
+            _lobby = lobby;
+
+            // Facepunch creates every lobby invisible.
+            lobby.SetPublic();
+            lobby.SetData(SampleKey, SampleValue);
+            lobby.SetData(NameKey, _lobbyNameText);
+            PublishPingLocation(lobby);
+
+            _statusText = "Hosting. Players can find this lobby with Search.";
         }
 
         /// <summary>
@@ -396,39 +419,18 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
         }
 
         /// <summary>
-        /// Records the lobby this peer created and publishes its listing data, or reports why Steam refused it.
+        /// Reports why Steam refused a lobby this peer asked for.
         /// </summary>
         /// <param name="result">Steam's result.</param>
         /// <param name="lobby">The lobby Steam created.</param>
+        /// <remarks>A created lobby is adopted in <see cref="Host"/>, which can tell whether it belongs to a session already left.</remarks>
         private void OnLobbyCreated(Result result, Lobby lobby)
         {
-            // The user pressed Leave while Steam was creating the lobby.
-            if (!_hasStarted)
-            {
-                if (result is Result.OK)
-                    lobby.Leave();
-
+            if (result is Result.OK || !_hasStarted)
                 return;
-            }
 
-            if (result is not Result.OK)
-            {
-                _statusText = $"Steam refused the lobby: [{result}]. The server is still up.";
-                Debug.LogError($"[{nameof(LobbyBrowserPanel)}] could not create a lobby: [{result}].");
-
-                return;
-            }
-
-            _isLobbyOwner = true;
-            _lobby = lobby;
-
-            // Facepunch creates every lobby invisible.
-            lobby.SetPublic();
-            lobby.SetData(SampleKey, SampleValue);
-            lobby.SetData(NameKey, _lobbyNameText);
-            PublishPingLocation(lobby);
-
-            _statusText = "Hosting. Players can find this lobby with Search.";
+            _statusText = $"Steam refused the lobby: [{result}]. The server is still up.";
+            Debug.LogError($"[{nameof(LobbyBrowserPanel)}] could not create a lobby: [{result}].");
         }
 
         /// <summary>

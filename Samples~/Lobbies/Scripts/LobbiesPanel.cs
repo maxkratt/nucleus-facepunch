@@ -334,8 +334,28 @@ namespace Nucleus.Integrations.Facepunch.Samples.Lobbies
 
             _statusText = "Creating the lobby.";
 
-            // The outcome is handled in OnLobbyCreated, which also carries Steam's reason for a refusal; the task's own value drops it.
-            await SteamMatchmaking.CreateLobbyAsync(_maximumLobbyMembers);
+            // A refusal is reported in OnLobbyCreated, which carries Steam's reason; the task answers null for it.
+            Lobby? createdLobby = await SteamMatchmaking.CreateLobbyAsync(_maximumLobbyMembers);
+
+            // The user pressed Leave, and perhaps hosted again, or the scene closed, while Steam was creating the lobby.
+            // Steam's lobby event cannot tell one create from another, so the lobby is adopted or left here.
+            if (this == null || leaveCount != _leaveCount)
+            {
+                createdLobby?.Leave();
+
+                return;
+            }
+
+            if (createdLobby is not Lobby lobby)
+                return;
+
+            _isLobbyOwner = true;
+            _lobby = lobby;
+            _statusText = $"Hosting a {LobbyTypeNames[(int)_lobbyType].ToLowerInvariant()} lobby.";
+
+            ApplyLobbyType(lobby);
+            SetLobbyData(lobby);
+            RefreshLobby(lobby);
         }
 
         /// <summary>
@@ -538,35 +558,18 @@ namespace Nucleus.Integrations.Facepunch.Samples.Lobbies
         private bool IsCurrentLobby(Lobby lobby) => _lobby is Lobby currentLobby && currentLobby.Id.Value == lobby.Id.Value;
 
         /// <summary>
-        /// Records the lobby this peer created and sets its type and first lobby data, or reports why Steam refused it.
+        /// Reports why Steam refused a lobby this peer asked for.
         /// </summary>
         /// <param name="result">Steam's result.</param>
         /// <param name="lobby">The lobby Steam created.</param>
+        /// <remarks>A created lobby is adopted in <see cref="Host"/>, which can tell whether it belongs to a session already left.</remarks>
         private void OnLobbyCreated(Result result, Lobby lobby)
         {
-            if (result is not Result.OK)
-            {
-                _statusText = $"Steam refused the lobby: [{result}]. The server is still up.";
-                Debug.LogError($"[{nameof(LobbiesPanel)}] could not create a lobby: [{result}].");
-
+            if (result is Result.OK || !_hasStarted)
                 return;
-            }
 
-            // The user pressed Leave while Steam was creating the lobby.
-            if (!_hasStarted)
-            {
-                lobby.Leave();
-
-                return;
-            }
-
-            _isLobbyOwner = true;
-            _lobby = lobby;
-            _statusText = $"Hosting a {LobbyTypeNames[(int)_lobbyType].ToLowerInvariant()} lobby.";
-
-            ApplyLobbyType(lobby);
-            SetLobbyData(lobby);
-            RefreshLobby(lobby);
+            _statusText = $"Steam refused the lobby: [{result}]. The server is still up.";
+            Debug.LogError($"[{nameof(LobbiesPanel)}] could not create a lobby: [{result}].");
         }
 
         /// <summary>
