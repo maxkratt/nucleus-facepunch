@@ -21,7 +21,8 @@ namespace Nucleus.Integrations.Facepunch.Tests
 {
     /// <summary>
     /// Play mode coverage of <see cref="FacepunchSockets"/> on a running Steam: a host's own client and a host kicking it, a remote client,
-    /// a kick with a reason, a client that disconnects and joins again, and a client that sends past the server's packet limit.
+    /// a kick with a reason, a client that disconnects and joins again, a client that sends past the server's packet limit, and reliable and
+    /// unreliable messages sent both ways, each arriving on its own channel and the reliable ones in order.
     /// </summary>
     /// <remarks>
     /// Skipped unless the Steam client is running, since there is no mock of Steam. Every peer runs in this process on one account, so
@@ -77,6 +78,10 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// The length of the second client's payload in the per-connection case.
         /// </summary>
         private const int SecondClientPayloadCharacters = 200;
+        /// <summary>
+        /// How many reliable and how many unreliable messages the channel case sends in each direction.
+        /// </summary>
+        private const int SequencedMessageCount = 500;
 
         /// <summary>
         /// Every GameObject the case created, destroyed at teardown.
@@ -98,6 +103,15 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// How many small unreliable messages a client has received.
         /// </summary>
         private int _receivedTickCount;
+        /// <summary>
+        /// The indices of the sequenced messages received, in arrival order, in four buckets: client to server reliable, client to server
+        /// unreliable, server to client reliable, then server to client unreliable.
+        /// </summary>
+        private readonly List<int>[] _receivedSequencedIndices = { new(), new(), new(), new() };
+        /// <summary>
+        /// How many sequenced messages arrived on a channel other than the one they were sent on.
+        /// </summary>
+        private int _sequencedChannelMismatchCount;
 
         /// <summary>
         /// Skips the case unless Steam is running, and initializes Steam unless something already has.
@@ -136,6 +150,10 @@ namespace Nucleus.Integrations.Facepunch.Tests
             _receivedPayloadCharacters = 0;
             _receivedBulkBytes = 0;
             _receivedTickCount = 0;
+            _sequencedChannelMismatchCount = 0;
+
+            foreach (List<int> receivedIndices in _receivedSequencedIndices)
+                receivedIndices.Clear();
 
             // Lets the destroyed peers close their links while Steam can still send the close.
             yield return null;
@@ -538,6 +556,81 @@ namespace Nucleus.Integrations.Facepunch.Tests
         }
 
         /// <summary>
+        /// Reliable and unreliable messages sent both ways between a client and its server each arrive on the channel they were sent on, and
+        /// the reliable ones arrive in the order they were sent.
+        /// </summary>
+        /// <param name="isHostOwnClient">True to run the client as the host's own client, false for a remote client.</param>
+        /// <param name="isPerConnectionReceiveEnabled">Whether the server receives each client through its own call.</param>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator Channels_SentBothWays_EachArrivesOnItsChannelAndReliableInOrder([Values(false, true)] bool isHostOwnClient, [Values(false, true)] bool isPerConnectionReceiveEnabled)
+        {
+            UnityCoreManager serverCoreManager;
+            UnityCoreManager clientCoreManager;
+            Connection clientToServerConnection;
+            Connection serverToClientConnection;
+
+            if (isHostOwnClient)
+            {
+                serverCoreManager = NewPeer("SteamHost", out UnityTransportManager hostTransportManager, out FacepunchTransport _);
+                clientCoreManager = serverCoreManager;
+
+                yield return WaitForTask(hostTransportManager.EnsureAddedAsync());
+
+                FacepunchSockets hostFacepunchSockets = (FacepunchSockets)hostTransportManager.Transports[0];
+                hostFacepunchSockets.PerConnectionReceiveEnabled = isPerConnectionReceiveEnabled;
+
+                yield return WaitForTask(hostTransportManager.StartHostAsync());
+                yield return WaitUntil(() => IsClientAuthenticated(serverCoreManager));
+
+                Assert.IsTrue(IsClientAuthenticated(serverCoreManager), "The host's own client never authenticated.");
+                Assert.IsTrue(serverCoreManager.CoreManager.TransportManager.TryGetServerConnection(out clientToServerConnection), "The host's client holds no server connection.");
+                Assert.IsTrue(TryGetOwnClientConnection(serverCoreManager, hostFacepunchSockets, out serverToClientConnection), "The server does not report the host's client as its own.");
+            }
+            else
+            {
+                yield return StartServerAndRemoteClient(out serverCoreManager, out clientCoreManager, out UnityTransportManager _, isPerConnectionReceiveEnabled: isPerConnectionReceiveEnabled);
+
+                Assert.IsTrue(clientCoreManager.CoreManager.TransportManager.TryGetServerConnection(out clientToServerConnection), "The client holds no server connection.");
+                Assert.IsTrue(TryGetRemoteClientConnection(serverCoreManager, out serverToClientConnection), "The server holds no remote client.");
+            }
+
+            MessageManager serverMessageManager = serverCoreManager.CoreManager.MessageManager;
+            MessageManager clientMessageManager = clientCoreManager.CoreManager.MessageManager;
+            serverMessageManager.RegisterMessageHandler<SteamPlayTestSequencedMessage>(OnSequencedMessageReceived);
+
+            // A host's own client shares the server's message manager, so the one handler serves both directions.
+            if (!isHostOwnClient)
+                clientMessageManager.RegisterMessageHandler<SteamPlayTestSequencedMessage>(OnSequencedMessageReceived);
+
+            try
+            {
+                for (int i = 0; i < SequencedMessageCount; i++)
+                {
+                    clientToServerConnection.SendMessage(Channel.Reliable, new SteamPlayTestSequencedMessage { Index = i, IsSentReliable = true });
+                    clientToServerConnection.SendMessage(Channel.Unreliable, new SteamPlayTestSequencedMessage { Index = i, IsSentReliable = false });
+                    serverToClientConnection.SendMessage(Channel.Reliable, new SteamPlayTestSequencedMessage { Index = i, IsSentReliable = true });
+                    serverToClientConnection.SendMessage(Channel.Unreliable, new SteamPlayTestSequencedMessage { Index = i, IsSentReliable = false });
+                }
+
+                yield return WaitUntil(AreSequencedBucketsFull);
+            }
+            finally
+            {
+                serverMessageManager.UnregisterMessageHandler<SteamPlayTestSequencedMessage>(OnSequencedMessageReceived);
+
+                if (!isHostOwnClient)
+                    clientMessageManager.UnregisterMessageHandler<SteamPlayTestSequencedMessage>(OnSequencedMessageReceived);
+            }
+
+            Assert.AreEqual(0, _sequencedChannelMismatchCount, "A message arrived on a channel other than the one it was sent on.");
+
+            AssertSequencedDelivery(_receivedSequencedIndices[0], _receivedSequencedIndices[1], "client to server");
+            AssertSequencedDelivery(_receivedSequencedIndices[2], _receivedSequencedIndices[3], "server to client");
+        }
+
+        /// <summary>
         /// Records the reason a kicked client received.
         /// </summary>
         /// <param name="messageContext">The context of the message.</param>
@@ -570,6 +663,37 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// <param name="messageContext">The context the message arrived in.</param>
         /// <param name="steamPlayTestPayload">The message.</param>
         private void OnTickReceived(in MessageContext messageContext, SteamPlayTestPayload steamPlayTestPayload) => _receivedTickCount++;
+
+        /// <summary>
+        /// Records the index of a sequenced message in the bucket of its direction and mode, and counts it when it arrived on the wrong channel.
+        /// </summary>
+        /// <param name="messageContext">The context the message arrived in.</param>
+        /// <param name="steamPlayTestSequencedMessage">The message.</param>
+        private void OnSequencedMessageReceived(in MessageContext messageContext, SteamPlayTestSequencedMessage steamPlayTestSequencedMessage)
+        {
+            Channel expectedChannel = steamPlayTestSequencedMessage.IsSentReliable ? Channel.Reliable : Channel.Unreliable;
+
+            if (messageContext.Channel != expectedChannel)
+                _sequencedChannelMismatchCount++;
+
+            int bucketIndex = (messageContext.IsSenderServer ? 2 : 0) + (steamPlayTestSequencedMessage.IsSentReliable ? 0 : 1);
+            _receivedSequencedIndices[bucketIndex].Add(steamPlayTestSequencedMessage.Index);
+        }
+
+        /// <summary>
+        /// Returns whether every sequenced bucket holds all the messages sent to it.
+        /// </summary>
+        /// <returns><see langword="true"/> once each of the four buckets holds <see cref="SequencedMessageCount"/> messages.</returns>
+        private bool AreSequencedBucketsFull()
+        {
+            foreach (List<int> receivedIndices in _receivedSequencedIndices)
+            {
+                if (receivedIndices.Count < SequencedMessageCount)
+                    return false;
+            }
+
+            return true;
+        }
 
         /// <summary>
         /// Starts a server peer listening on a loopback port, then a client peer that joins it by address, and waits for the join.
@@ -714,6 +838,32 @@ namespace Nucleus.Integrations.Facepunch.Tests
         }
 
         /// <summary>
+        /// Asserts that the reliable messages of one direction arrived in the order sent, and that its unreliable ones all arrived once.
+        /// </summary>
+        /// <param name="reliableIndices">The indices of the reliable messages, in arrival order.</param>
+        /// <param name="unreliableIndices">The indices of the unreliable messages, in arrival order.</param>
+        /// <param name="direction">The name of the direction, for the failure messages.</param>
+        private static void AssertSequencedDelivery(List<int> reliableIndices, List<int> unreliableIndices, string direction)
+        {
+            Assert.AreEqual(SequencedMessageCount, reliableIndices.Count, $"The {direction} reliable messages did not all arrive.");
+
+            for (int i = 0; i < reliableIndices.Count; i++)
+                Assert.AreEqual(i, reliableIndices[i], $"The {direction} reliable message at position [{i}] arrived out of order.");
+
+            Assert.AreEqual(SequencedMessageCount, unreliableIndices.Count, $"The {direction} unreliable messages did not all arrive exactly once.");
+
+            HashSet<int> distinctIndices = new();
+
+            foreach (int unreliableIndex in unreliableIndices)
+            {
+                Assert.That(unreliableIndex, Is.InRange(0, SequencedMessageCount - 1), $"A {direction} unreliable message carried an index outside the sent range.");
+                distinctIndices.Add(unreliableIndex);
+            }
+
+            Assert.AreEqual(SequencedMessageCount, distinctIndices.Count, $"A {direction} unreliable message arrived more than once.");
+        }
+
+        /// <summary>
         /// Lists the address pairs the family case runs: the server's bind address, then the host the client dials.
         /// </summary>
         /// <returns>The pairs.</returns>
@@ -811,5 +961,25 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// The bytes carried, which the receiver reads into an array rented from <c>TrackedArrayPool</c> and returns.
         /// </summary>
         public ArraySegment<byte> Bytes;
+    }
+
+    /// <summary>
+    /// A numbered message a play mode test sends in both directions on both channels, to check order and the channel it arrives on.
+    /// </summary>
+    [NetworkType]
+    public struct SteamPlayTestSequencedMessage : IMessage
+    {
+        /// <inheritdoc/>
+        public bool IsAuthenticationRequired => true;
+
+        /// <summary>
+        /// The position of the message among those sent in its direction and mode.
+        /// </summary>
+        public int Index;
+
+        /// <summary>
+        /// Whether the message was sent on the reliable channel, rather than the unreliable one.
+        /// </summary>
+        public bool IsSentReliable;
     }
 }
