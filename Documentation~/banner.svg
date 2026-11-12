@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="160" viewBox="0 0 800 160" role="img" aria-label="Nucleus Facepunch.Steamworks: SteamID relay, Fake IP game servers, IPv4 / IPv6">
+  <rect width="800" height="160" fill="#13141f"/>
+  <g font-family="Segoe UI, system-ui, Arial, sans-serif">
+    <path d="M36 94H764" stroke="#3a3d52"/>
+    <text x="36" y="72" font-size="44" font-weight="700" fill="#f3f4f8">Nucleus Facepunch<tspan fill="#e0262c">.<animate attributeName="fill-opacity" values="1;.45;1" dur="2.4s" repeatCount="indefinite"/></tspan>Steamworks</text>
+    <text x="38" y="126" font-size="18" fill="#9ea2b3">SteamID relay<tspan fill="#e0262c" dx="10" dy="0">·</tspan><tspan dx="10">Fake IP game servers</tspan><tspan fill="#e0262c" dx="10">·</tspan><tspan dx="10">IPv4 / IPv6</tspan></text>
+  </g>
+</svg>

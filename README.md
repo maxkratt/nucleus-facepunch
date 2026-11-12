@@ -1,27 +1,6 @@
-# Nucleus Facepunch.Steamworks
+![Nucleus Facepunch.Steamworks: SteamID relay, Fake IP game servers, IPv4 / IPv6](Documentation~/banner.svg)
 
 A Steam Networking Sockets transport for the Nucleus netcode engine, built on [Facepunch.Steamworks](https://github.com/Facepunch/Facepunch.Steamworks) 2.5.2. Players host and join each other by SteamID through Valve's relay, dedicated servers run as Steam game servers behind a fake IP, and two processes can also dial each other by IPv4 or IPv6 address.
-
-## Which Steam transport
-
-There are two Nucleus Steam transports, and a project uses one: both libraries declare the `Steamworks` namespace, so they cannot be installed together.
-
-- **This one** if your game already uses Facepunch.Steamworks, or you prefer its shorter async API.
-- **[Nucleus Steamworks.NET](https://github.com/maxkratt/nucleus-steamworksnet)** if your game uses Steamworks.NET, or you need relay-only Steam ID links, a game server login token, or the per-message channel without a header byte.
-
-What Facepunch.Steamworks 2.5.2 does not expose, and what this transport does instead:
-
-| Feature | Here |
-|---|---|
-| Relay-only Steam ID links | Not available. Steam ID links follow each player's Steam setting for direct connections, so **a player may learn another player's IP address**. Use Fake IP behind a game server where that matters. |
-| Game server login token | Not available: a game server logs on anonymously only, so its SteamID changes each run. |
-| Choosing the Steam interface | There is no Game Server toggle. The transport uses whichever Steam the game initialized: `SteamClient`, or `SteamServer` on a dedicated server. With both up, the client's interface wins. |
-| Per-connection options | Timeouts, send rates and the send buffer are process wide, applied at each start, and also affect any other Steam connection in the process. |
-| Message flags on receive | Each message carries its channel in one header byte, so `DatagramOverheadBytes` is 1. |
-| Zero-copy send | Each send copies the payload and header into a reused buffer. No garbage either way. |
-| Simulated jitter, reordering and duplication | Only latency and loss are simulated; the others are logged as ignored. |
-| Steam's estimated send rate in the link status | Left out; every other field is there. |
-| Telling the friends list a player is speaking | Not available (Voice Chat sample). |
 
 ## Requirements
 
@@ -54,6 +33,20 @@ Facepunch.Steamworks 2.5.2 and Steam's native libraries are included in the pack
 | Public port, or two processes on one account | IP Address | `SteamServer`, or `SteamClient` for local tests | `ServerAddress` (`ip:port` or `[ipv6]:port`) |
 
 A dedicated server runs on `SteamServer.Init(appId, init, false)`, `SteamServer.LogOnAnonymous()` and `SteamServer.RunCallbacks()` every frame, with no Steam client on the machine. A client always uses the user's Steam. A process that wants both must call `SteamClient.Init` first: the other order throws `VersionMismatch`. Steam ID addressing between two machines needs two Steam accounts; one account across two processes needs IP Address.
+
+### What Facepunch.Steamworks 2.5.2 does not expose, and what this transport does instead:
+
+| Feature | Here |
+|---|---|
+| Relay-only Steam ID links | Not available. Steam ID links follow each player's Steam setting for direct connections, so **a player may learn another player's IP address**. Use Fake IP behind a game server where that matters. |
+| Game server login token | Not available: a game server logs on anonymously only, so its SteamID changes each run. |
+| Choosing the Steam interface | There is no Game Server toggle. The transport uses whichever Steam the game initialized: `SteamClient`, or `SteamServer` on a dedicated server. With both up, the client's interface wins. |
+| Per-connection options | Timeouts, send rates and the send buffer are process wide, applied at each start, and also affect any other Steam connection in the process. |
+| Message flags on receive | Each message carries its channel in one header byte, so `DatagramOverheadBytes` is 1. |
+| Zero-copy send | Each send copies the payload and header into a reused buffer. No garbage either way. |
+| Simulated jitter, reordering and duplication | Only latency and loss are simulated; the others are logged as ignored. |
+| Steam's estimated send rate in the link status | Left out; every other field is there. |
+| Telling the friends list a player is speaking | Not available (Voice Chat sample). |
 
 ### Shutting Steam down
 
@@ -165,7 +158,7 @@ The Quick Start and Voice Chat samples spawn networked prefabs: after importing 
 
 The PlayMode tests (`Nucleus.Integrations.Facepunch.Tests`) run in the Test Runner when the package is listed under `testables` in `Packages/manifest.json`. They skip unless Steam is running.
 
-<img src="https://raw.githubusercontent.com/AnkleBreaker-Studio/unity-mcp-plugin/main/icon.png" width="16" alt=""> Testing Powered by [AnkleBreaker MCP](https://github.com/AnkleBreaker-Studio/unity-mcp-plugin).
+<img src="https://raw.githubusercontent.com/AnkleBreaker-Studio/unity-mcp-plugin/main/icon.png" width="32" align="absmiddle" alt=""> Testing Powered by [AnkleBreaker MCP](https://github.com/AnkleBreaker-Studio/unity-mcp-plugin).
 
 ## Licence
 
