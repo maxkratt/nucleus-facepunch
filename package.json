@@ -3,10 +3,54 @@
   "displayName": "Nucleus Facepunch.Steamworks",
   "version": "0.1.0",
   "unity": "6000.5",
-  "description": "Steam Networking Sockets transport for the Nucleus netcode engine, built on Facepunch.Steamworks. Requires Nucleus 0.5.0 or later in Assets/Nucleus.",
+  "description": "Steam Networking Sockets transport for the Nucleus netcode engine, built on Facepunch.Steamworks 2.5.2, which is included. Requires Nucleus 0.5.0 or later in Assets/Nucleus.",
   "license": "MIT",
+  "licensesUrl": "https://github.com/maxkratt/nucleus-facepunch/blob/master/LICENSE.md",
+  "documentationUrl": "https://github.com/maxkratt/nucleus-facepunch#readme",
+  "changelogUrl": "https://github.com/maxkratt/nucleus-facepunch/blob/master/CHANGELOG.md",
+  "keywords": [
+    "nucleus",
+    "steam",
+    "steamworks",
+    "facepunch",
+    "networking",
+    "transport",
+    "multiplayer"
+  ],
   "author": {
     "name": "maxkratt",
     "url": "https://github.com/maxkratt"
-  }
+  },
+  "samples": [
+    {
+      "displayName": "Shared",
+      "description": "Steam bootstrap, name tags and the sample skin. Every other sample needs it.",
+      "path": "Samples~/Shared"
+    },
+    {
+      "displayName": "Quick Start",
+      "description": "Host or join by SteamID and move a capsule.",
+      "path": "Samples~/QuickStart"
+    },
+    {
+      "displayName": "Lobbies",
+      "description": "Create, join and leave Steam lobbies, with members, friends and lobby data.",
+      "path": "Samples~/Lobbies"
+    },
+    {
+      "displayName": "Lobby Browser",
+      "description": "Search public lobbies by distance and estimated ping.",
+      "path": "Samples~/LobbyBrowser"
+    },
+    {
+      "displayName": "Dedicated Server",
+      "description": "A Steam game server behind a fake IP, with a LAN and internet server browser.",
+      "path": "Samples~/DedicatedServer"
+    },
+    {
+      "displayName": "Voice Chat",
+      "description": "Push to talk Steam voice relayed through the server.",
+      "path": "Samples~/VoiceChat"
+    }
+  ]
 }

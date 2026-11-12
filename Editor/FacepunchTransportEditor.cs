@@ -339,7 +339,8 @@ namespace Nucleus.Integrations.Facepunch.Editor
             SerializedProperty sendRateMaximumSerializedProperty = serializedObject.FindProperty("_sendRateMaximumBytesPerSecond");
             SerializedProperty sendBufferSizeSerializedProperty = serializedObject.FindProperty("_sendBufferSizeBytes");
             SerializedProperty perConnectionReceiveEnabledSerializedProperty = serializedObject.FindProperty("_perConnectionReceiveEnabled");
-            string advancedSummary = $"{FormatSeconds(connectingTimeoutSecondsSerializedProperty.intValue)} / {FormatSeconds(idleTimeoutSecondsSerializedProperty.intValue)} timeouts · {FormatBytes(sendRateMaximumSerializedProperty.uintValue, SteamDefaultSendRateBytes)}/s · {FormatBytes(sendBufferSizeSerializedProperty.uintValue, SteamDefaultSendBufferBytes)} buffer";
+            string receiveSummary = perConnectionReceiveEnabledSerializedProperty.boolValue ? "Per-connection · " : string.Empty;
+            string advancedSummary = $"{receiveSummary}{FormatSeconds(connectingTimeoutSecondsSerializedProperty.intValue)} / {FormatSeconds(idleTimeoutSecondsSerializedProperty.intValue)} · {FormatBytes(sendRateMinimumSerializedProperty.uintValue, SteamDefaultSendRateBytes)} to {FormatBytes(sendRateMaximumSerializedProperty.uintValue, SteamDefaultSendRateBytes)}/s · {FormatBytes(sendBufferSizeSerializedProperty.uintValue, SteamDefaultSendBufferBytes)} buffer";
 
             EditorGUILayout.Space(GroupSpacing);
 
