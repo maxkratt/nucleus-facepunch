@@ -177,6 +177,10 @@ namespace Nucleus.Integrations.Facepunch
         /// <inheritdoc/>
         public override async Task<Transport> AddToAsync(CoreManager coreManager)
         {
+            // The transport manager removes the transport on shutdown and adds it again on the next start, so the last start's authenticator goes first.
+            _steamTicketAuthenticator?.Deinitialize();
+            _steamTicketAuthenticator = null;
+
             _facepunchSockets = (FacepunchSockets)await coreManager.TransportManager.AddTransportAsync<FacepunchSockets>();
 
             _facepunchSockets.Addressing = _addressing;

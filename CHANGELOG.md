@@ -1,5 +1,8 @@
 # Changelog
 
+## Nucleus Facepunch.Steamworks 0.1.1
+- With Ticket Authentication on, a client that leaves and joins again is no longer dropped by the server. Stopping and starting the transport used to leave the previous ticket authenticator registered beside the new one.
+
 ## Nucleus Facepunch.Steamworks 0.1.0
 First release. Requires Nucleus 0.5.0 or later and Unity 6.5 or later. Facepunch.Steamworks 2.5.2 and Steam's native libraries for Windows, Linux and macOS are included.
 - Steam Networking Sockets transport for Nucleus over Facepunch.Steamworks, addressing by Steam ID, IPv4 or IPv6 address, or Fake IP, on whichever Steam interface the game initialized.
