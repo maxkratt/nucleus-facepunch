@@ -18,9 +18,10 @@ namespace Nucleus.Integrations.Facepunch
     /// belongs to the SteamID its <see cref="FacepunchSockets"/> link was authenticated as, and that it owns the game.
     /// </summary>
     /// <remarks>
-    /// Both sides run it. The client sends its ticket as soon as its link is up; the server begins an auth session bound to the link's
-    /// SteamID and approves the client once Steam answers. The host's own client, paired in process, is approved at once. Sessions open on
-    /// the same interface Facepunch's networking uses: the user's when it is up, otherwise the game server's.
+    /// Both sides run it. The client asks Steam for a ticket as soon as its link is up and sends it once Steam reports it ready; the
+    /// server begins an auth session bound to the link's SteamID and approves the client once Steam answers. The host's own client,
+    /// paired in process, is approved at once. Sessions open on the same interface Facepunch's networking uses: the user's when it is
+    /// up, otherwise the game server's.
     /// </remarks>
     public class SteamTicketAuthenticator : Managers.Server.IClientAuthenticator, INetworkLoopStepCallback
     {
@@ -37,6 +38,11 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         private AuthTicket _ownTicket;
         /// <summary>
+        /// Counts this peer's ticket requests and cancellations, so a ticket that readies after its request was cancelled or replaced is
+        /// recognised and cancelled rather than sent.
+        /// </summary>
+        private uint _ownTicketRequestNumber;
+        /// <summary>
         /// Connecting clients whose ticket has not arrived yet, with the SteamID their link was authenticated as.
         /// </summary>
         private readonly Dictionary<Connection, ulong> _awaitingTicketSteamIdsByConnection = new();
@@ -52,6 +58,19 @@ namespace Nucleus.Integrations.Facepunch
         /// Steam's verdicts, applied on the loop thread.
         /// </summary>
         private readonly ConcurrentQueue<TicketVerdict> _ticketVerdicts = new();
+        /// <summary>
+        /// This peer's own tickets once Steam has answered for them, applied on the loop thread.
+        /// </summary>
+        private readonly ConcurrentQueue<OwnTicketResult> _ownTicketResults = new();
+        /// <summary>
+        /// Guards <see cref="_ownTicketRequestNumber"/>, so an answer that arrives off the loop thread is never queued after a cancel.
+        /// </summary>
+        private readonly object _ownTicketRequestLock = new();
+
+        /// <summary>
+        /// How long this peer waits for Steam to ready its own ticket, in seconds.
+        /// </summary>
+        private const double OwnTicketTimeoutSeconds = 10d;
 
         /// <summary>
         /// Registers this as the server's authenticator, and starts sending this peer's own ticket whenever its client links up.
@@ -111,6 +130,12 @@ namespace Nucleus.Integrations.Facepunch
             _awaitingTicketSteamIdsByConnection.Clear();
             CancelOwnTicket();
 
+            while (_ownTicketResults.TryDequeue(out OwnTicketResult ownTicketResult))
+            {
+                if (SteamClient.IsValid)
+                    ownTicketResult.AuthTicket?.Cancel();
+            }
+
             _coreManager.ServerManager.SetAuthenticator(clientAuthenticator: null);
             _coreManager.ServerManager.ClientDisconnecting -= OnClientDisconnecting;
             _coreManager.TransportManager.ConnectionLocalStateChanged -= OnConnectionLocalStateChanged;
@@ -129,7 +154,7 @@ namespace Nucleus.Integrations.Facepunch
         NetworkLoopSteps INetworkLoopStepCallback.GetNetworkLoopSteps() => NetworkLoopSteps.LateVariableUpdate;
 
         /// <summary>
-        /// Applies Steam's queued verdicts.
+        /// Applies Steam's queued verdicts and sends this peer's own ticket once it is ready.
         /// </summary>
         /// <param name="networkLoopStep">The step being performed.</param>
         /// <param name="stepDelta">Delta information about the step.</param>
@@ -137,6 +162,9 @@ namespace Nucleus.Integrations.Facepunch
         {
             while (_ticketVerdicts.TryDequeue(out TicketVerdict ticketVerdict))
                 ApplyTicketVerdict(ticketVerdict);
+
+            while (_ownTicketResults.TryDequeue(out OwnTicketResult ownTicketResult))
+                ApplyOwnTicketResult(ownTicketResult);
         }
 
         /// <summary>
@@ -241,7 +269,7 @@ namespace Nucleus.Integrations.Facepunch
         }
 
         /// <summary>
-        /// Sends this peer's ticket when its client links up to another peer's server, and cancels it when the link drops.
+        /// Requests this peer's ticket when its client links up to another peer's server, and cancels it when the link drops.
         /// </summary>
         /// <param name="connectionStateChange">The state change that was raised.</param>
         private void OnConnectionLocalStateChanged(ConnectionStateChange connectionStateChange)
@@ -254,7 +282,7 @@ namespace Nucleus.Integrations.Facepunch
             if (localConnectionState is LocalConnectionState.Disconnected)
                 CancelOwnTicket();
             else if (localConnectionState is LocalConnectionState.Connected && !_coreManager.TransportManager.IsServerStarted)
-                SendOwnTicket();
+                RequestOwnTicket();
         }
 
         /// <summary>
@@ -268,35 +296,94 @@ namespace Nucleus.Integrations.Facepunch
         }
 
         /// <summary>
-        /// Writes this peer's ticket, bound to the server it is linked to, and sends it.
+        /// Asks Steam for this peer's ticket, bound to the server it is linked to; <see cref="ApplyOwnTicketResult"/> sends it once Steam reports it ready.
         /// </summary>
-        private void SendOwnTicket()
+        /// <remarks>
+        /// Facepunch keeps Steam's ticket-ready callback internal, so this waits through <see cref="SteamUser.GetAuthSessionTicketAsync"/>,
+        /// which answers with <see langword="null"/> when Steam refuses the ticket or does not ready it in time. The answer is queued, since
+        /// the wait may resume off the loop thread.
+        /// </remarks>
+        private async void RequestOwnTicket()
         {
             CancelOwnTicket();
 
-            if (!_coreManager.TransportManager.TryGetServerConnection(out Connection serverConnection))
-                return;
+            uint ownTicketRequestNumber;
+
+            lock (_ownTicketRequestLock)
+                ownTicketRequestNumber = _ownTicketRequestNumber;
 
             // The ticket is bound to the server's identity, so a server that is handed it cannot replay it to another.
             _facepunchSockets.TryGetServerIdentity(out NetIdentity serverIdentity);
 
-            _ownTicket = SteamUser.GetAuthSessionTicket(serverIdentity);
+            AuthTicket authTicket;
 
-            if (_ownTicket?.Data is null)
+            try
             {
-                Logger<SteamTicketAuthenticator>.LogError("Steam did not issue an auth session ticket, so the server will refuse this client.");
+                authTicket = await SteamUser.GetAuthSessionTicketAsync(serverIdentity, OwnTicketTimeoutSeconds);
+            }
+            catch (Exception exception)
+            {
+                Logger<SteamTicketAuthenticator>.LogError($"Steam failed while readying an auth session ticket: [{exception.Message}], so the server will refuse this client.");
 
                 return;
             }
 
-            serverConnection.SendMessage(Channel.Reliable, new SteamAuthTicketMessage { Ticket = new(_ownTicket.Data) });
+            lock (_ownTicketRequestLock)
+            {
+                // A request cancelled, replaced or deinitialized while Steam was answering is cancelled here, since after a deinitialize nothing drains the queue.
+                if (ownTicketRequestNumber == _ownTicketRequestNumber)
+                {
+                    _ownTicketResults.Enqueue(new(ownTicketRequestNumber, authTicket));
+
+                    return;
+                }
+            }
+
+            if (SteamClient.IsValid)
+                authTicket?.Cancel();
         }
 
         /// <summary>
-        /// Cancels this peer's outstanding ticket, so it can no longer be used.
+        /// Sends this peer's ticket to the server once Steam reports it ready, or cancels it when its request was cancelled or replaced
+        /// in the meantime.
+        /// </summary>
+        /// <param name="ownTicketResult">Steam's answer to one request.</param>
+        private void ApplyOwnTicketResult(OwnTicketResult ownTicketResult)
+        {
+            AuthTicket authTicket = ownTicketResult.AuthTicket;
+
+            if (ownTicketResult.RequestNumber != _ownTicketRequestNumber)
+            {
+                if (SteamClient.IsValid)
+                    authTicket?.Cancel();
+
+                return;
+            }
+
+            if (authTicket?.Data is null)
+            {
+                if (SteamClient.IsValid)
+                    authTicket?.Cancel();
+
+                Logger<SteamTicketAuthenticator>.LogError("Steam did not ready an auth session ticket, so the server will refuse this client.");
+
+                return;
+            }
+
+            _ownTicket = authTicket;
+
+            if (_coreManager.TransportManager.TryGetServerConnection(out Connection serverConnection))
+                serverConnection.SendMessage(Channel.Reliable, new SteamAuthTicketMessage { Ticket = new(authTicket.Data) });
+        }
+
+        /// <summary>
+        /// Cancels this peer's outstanding ticket, so it can no longer be used, along with any request Steam has not answered yet.
         /// </summary>
         private void CancelOwnTicket()
         {
+            lock (_ownTicketRequestLock)
+                _ownTicketRequestNumber++;
+
             if (_ownTicket is null)
                 return;
 
@@ -366,6 +453,32 @@ namespace Nucleus.Integrations.Facepunch
             {
                 SteamId = steamId;
                 Response = response;
+            }
+        }
+
+        /// <summary>
+        /// Steam's answer to one request for this peer's own ticket.
+        /// </summary>
+        private readonly struct OwnTicketResult
+        {
+            /// <summary>
+            /// The ticket, ready to send, or <see langword="null"/> when Steam did not ready one.
+            /// </summary>
+            public readonly AuthTicket AuthTicket;
+            /// <summary>
+            /// The value <see cref="_ownTicketRequestNumber"/> held when the ticket was requested.
+            /// </summary>
+            public readonly uint RequestNumber;
+
+            /// <summary>
+            /// Creates a new instance.
+            /// </summary>
+            /// <param name="requestNumber">The value <see cref="_ownTicketRequestNumber"/> held when the ticket was requested.</param>
+            /// <param name="authTicket">The ticket, or <see langword="null"/> when Steam did not ready one.</param>
+            public OwnTicketResult(uint requestNumber, AuthTicket authTicket)
+            {
+                RequestNumber = requestNumber;
+                AuthTicket = authTicket;
             }
         }
     }
