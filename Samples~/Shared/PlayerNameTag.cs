@@ -58,6 +58,10 @@ namespace Nucleus.Integrations.Facepunch.Samples
         /// </summary>
         private Camera _camera;
         /// <summary>
+        /// The transport whose <see cref="FacepunchSockets.SteamIdChanged"/> the server follows for the controller, or null while it follows none.
+        /// </summary>
+        private FacepunchSockets _followedFacepunchSockets;
+        /// <summary>
         /// The name drawn on the tag, empty while there is none to show.
         /// </summary>
         private string _displayName = string.Empty;
@@ -100,6 +104,7 @@ namespace Nucleus.Integrations.Facepunch.Samples
             base.OnDestroy();
 
             SteamFriends.OnPersonaStateChange -= OnPersonaStateChanged;
+            StopFollowingSteamIds();
         }
 
         /// <summary>
@@ -117,6 +122,7 @@ namespace Nucleus.Integrations.Facepunch.Samples
         protected override void OnSystemUnlinked()
         {
             Component.MembersChanged -= OnNameTagMembersChanged;
+            StopFollowingSteamIds();
             SetDisplayName(string.Empty);
             IsSpeaking = false;
         }
@@ -126,16 +132,29 @@ namespace Nucleus.Integrations.Facepunch.Samples
         /// </summary>
         /// <param name="previousControllerConnection">The previous controlling Connection, or null.</param>
         /// <param name="currentControllerConnection">The current controlling Connection, or null.</param>
-        /// <remarks>The server knows every client's SteamID, the host's own included, so this works whether or not the transport shares them with clients.</remarks>
+        /// <remarks>
+        /// The server knows every client's SteamID, the host's own included, so this works whether or not the transport shares them with
+        /// clients. A player spawner that assigns control when the client authenticates can run before the transport records that
+        /// client's SteamID, so the server also follows <see cref="FacepunchSockets.SteamIdChanged"/> while a Steam client controls the object.
+        /// </remarks>
         protected override void OnControllerChanged(Connection previousControllerConnection, Connection currentControllerConnection)
         {
             if (!IsStarted(Invoker.Server))
                 return;
 
-            if (currentControllerConnection?.Transport is FacepunchSockets facepunchSockets && facepunchSockets.TryGetSteamId(currentControllerConnection, out ulong steamId))
-                Component.SteamId.Value = steamId;
-            else
+            StopFollowingSteamIds();
+
+            if (currentControllerConnection?.Transport is not FacepunchSockets facepunchSockets)
+            {
                 Component.SteamId.Value = FacepunchSockets.UnsetSteamId;
+
+                return;
+            }
+
+            _followedFacepunchSockets = facepunchSockets;
+            facepunchSockets.SteamIdChanged += OnSteamIdChanged;
+
+            Component.SteamId.Value = facepunchSockets.TryGetSteamId(currentControllerConnection, out ulong steamId) ? steamId : FacepunchSockets.UnsetSteamId;
         }
 
         /// <summary>
@@ -153,6 +172,29 @@ namespace Nucleus.Integrations.Facepunch.Samples
         {
             if (Component is not null && friend.Id.Value == Component.SteamId.Value)
                 RefreshDisplayName();
+        }
+
+        /// <summary>
+        /// Writes the controller's SteamID on the server once the transport records it.
+        /// </summary>
+        /// <param name="connectionId">The <see cref="Connection.Id"/> of the client.</param>
+        /// <param name="steamId">The client's SteamID64, or <see cref="FacepunchSockets.UnsetSteamId"/> when the client has left.</param>
+        private void OnSteamIdChanged(uint connectionId, ulong steamId)
+        {
+            if (connectionId == NetworkSystem.ControllerConnectionId)
+                Component.SteamId.Value = steamId;
+        }
+
+        /// <summary>
+        /// Stops following the transport's SteamIDs, if the server was following them.
+        /// </summary>
+        private void StopFollowingSteamIds()
+        {
+            if (_followedFacepunchSockets is null)
+                return;
+
+            _followedFacepunchSockets.SteamIdChanged -= OnSteamIdChanged;
+            _followedFacepunchSockets = null;
         }
 
         /// <summary>

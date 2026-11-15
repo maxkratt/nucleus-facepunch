@@ -3,6 +3,7 @@
 ## Nucleus Facepunch.Steamworks 0.1.1
 - With Ticket Authentication on, a client that leaves and joins again is no longer dropped by the server. Stopping and starting the transport used to leave the previous ticket authenticator registered beside the new one.
 - With Ticket Authentication on, a client now sends its ticket only once Steam reports it ready, rather than straight after asking for it, when Steam could still refuse it.
+- Shared sample: `PlayerNameTag` now shows a joining client's name. The server wrote the tag before the transport had recorded that client's SteamID, so the tag stayed empty; it now also follows `FacepunchSockets.SteamIdChanged`.
 
 ## Nucleus Facepunch.Steamworks 0.1.0
 First release. Requires Nucleus 0.5.0 or later and Unity 6.5 or later. Facepunch.Steamworks 2.5.2 and Steam's native libraries for Windows, Linux and macOS are included.
