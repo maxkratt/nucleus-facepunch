@@ -4,8 +4,7 @@
     "references": [
         "Nucleus.Integrations.Facepunch",
         "Nucleus.Integrations.Facepunch.Samples",
-        "Nucleus.Integrations.Unity",
-        "Unity.InputSystem"
+        "Nucleus.Integrations.Unity"
     ],
     "includePlatforms": [
         "Editor",

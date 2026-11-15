@@ -15,6 +15,7 @@ GameObject:
   - component: {fileID: 12334861448221133}
   - component: {fileID: 737039936808333512}
   - component: {fileID: 8993015776705088704}
+  - component: {fileID: 385082118702560576}
   m_Layer: 0
   m_Name: QuickStartPlayer
   m_TagString: Untagged
@@ -111,8 +112,8 @@ MonoBehaviour:
   _interpolateScaleEnabled: 1
   _kinematicManagementEnabled: 1
   _sendInterval: 0
-  _transmissionMode: 1
-  _extrapolationEnabled: 1
+  _transmissionMode: 0
+  _extrapolationEnabled: 0
 --- !u!114 &12334861448221133
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -148,8 +149,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 65d4bb2c49fd4cc381d9bd1c9875c09c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Nucleus.Integrations.Facepunch.Samples.QuickStart::Nucleus.Integrations.Facepunch.Samples.QuickStart.QuickStartPlayer
-  _moveSpeed: 6
-  _wanderRadius: 12
   _bodyRenderer: {fileID: 7271355026741975966}
 --- !u!114 &8993015776705088704
 MonoBehaviour:
@@ -168,3 +167,19 @@ MonoBehaviour:
   _heightOffset: 1.4
   _speakingIcon: {fileID: 0}
   _speakingIconSize: 28
+--- !u!114 &385082118702560576
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7029841285262910435}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e948f592982a4eb395cbae8154a282e5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Nucleus.Integrations.Facepunch.Samples::Nucleus.Integrations.Facepunch.Samples.PlayerMover
+  _moveSpeed: 6
+  _groundOffset: 1
+  _respawnHeight: -20
+  _respawnPosition: {x: 0, y: 3, z: 0}

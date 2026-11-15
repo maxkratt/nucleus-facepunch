@@ -1,6 +1,6 @@
 # Shared
 
-`SteamBootstrap`, which every other sample needs imported beside it; `PlayerNameTag`, which draws a player's Steam name over their object; `UI/SteamSampleSkin`, the GUISkin every sample panel draws with; and the ground and player materials in `Materials/`. The transport never initializes Steam itself; in a sample scene this component does.
+`SteamBootstrap`, which every other sample needs imported beside it; `PlayerNameTag`, which draws a player's Steam name over their object; `PlayerMover`, which walks a player's object with WASD or the arrow keys and puts it back above the origin when it falls off the ground (it compiles only with the Input System package); `UI/SteamSampleSkin`, the GUISkin every sample panel draws with; and the ground and player materials in `Materials/`. The transport never initializes Steam itself; in a sample scene this component does.
 
 ## What it shows
 

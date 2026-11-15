@@ -3,7 +3,8 @@
     "rootNamespace": "Nucleus.Integrations.Facepunch.Samples",
     "references": [
         "Nucleus.Integrations.Facepunch",
-        "Nucleus.Integrations.Unity"
+        "Nucleus.Integrations.Unity",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [
         "Editor",
@@ -18,6 +19,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.inputsystem",
+            "expression": "",
+            "define": "NUCLEUS_SAMPLES_INPUT_SYSTEM"
+        }
+    ],
     "noEngineReferences": false
 }

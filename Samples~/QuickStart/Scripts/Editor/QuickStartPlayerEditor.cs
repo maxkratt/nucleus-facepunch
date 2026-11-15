@@ -3,7 +3,7 @@ using UnityEditor;
 namespace Nucleus.Integrations.Facepunch.Samples.QuickStart.Editor
 {
     /// <summary>
-    /// Inspector presentation for <see cref="QuickStartPlayer"/>: the move speed, wander radius and tinted renderer.
+    /// Inspector presentation for <see cref="QuickStartPlayer"/>: the tinted renderer.
     /// </summary>
     [CustomEditor(typeof(QuickStartPlayer))]
     public class QuickStartPlayerEditor : UnityEditor.Editor
@@ -16,8 +16,6 @@ namespace Nucleus.Integrations.Facepunch.Samples.QuickStart.Editor
                 EditorGUILayout.PropertyField(serializedObject.FindProperty("m_Script"));
 
             serializedObject.Update();
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("_moveSpeed"));
-            EditorGUILayout.PropertyField(serializedObject.FindProperty("_wanderRadius"));
             EditorGUILayout.PropertyField(serializedObject.FindProperty("_bodyRenderer"));
             serializedObject.ApplyModifiedProperties();
         }

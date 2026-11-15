@@ -16,6 +16,7 @@ GameObject:
   - component: {fileID: 8637755300875621083}
   - component: {fileID: 5712318846659294999}
   - component: {fileID: 952557510214322476}
+  - component: {fileID: 8789107880367850423}
   m_Layer: 0
   m_Name: VoiceChatPlayer
   m_TagString: Untagged
@@ -112,8 +113,8 @@ MonoBehaviour:
   _interpolateScaleEnabled: 1
   _kinematicManagementEnabled: 1
   _sendInterval: 0
-  _transmissionMode: 1
-  _extrapolationEnabled: 1
+  _transmissionMode: 0
+  _extrapolationEnabled: 0
 --- !u!114 &12334861448221133
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -267,3 +268,19 @@ MonoBehaviour:
   _heightOffset: 1.4
   _speakingIcon: {fileID: 2800000, guid: 65beee419e8043289a2f6b65d9a097a6, type: 3}
   _speakingIconSize: 28
+--- !u!114 &8789107880367850423
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7029841285262910435}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e948f592982a4eb395cbae8154a282e5, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Nucleus.Integrations.Facepunch.Samples::Nucleus.Integrations.Facepunch.Samples.PlayerMover
+  _moveSpeed: 6
+  _groundOffset: 1
+  _respawnHeight: -20
+  _respawnPosition: {x: 0, y: 3, z: 0}

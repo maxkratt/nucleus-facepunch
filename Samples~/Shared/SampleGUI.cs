@@ -54,11 +54,11 @@ namespace Nucleus.Integrations.Facepunch.Samples
         /// <summary>
         /// The width of a field's label, in pixels.
         /// </summary>
-        private const float FieldLabelWidth = 96f;
+        private const float FieldLabelWidth = 120f;
         /// <summary>
         /// The width of a row's button, in pixels.
         /// </summary>
-        private const float RowButtonWidth = 70f;
+        private const float RowButtonWidth = 90f;
 
         /// <summary>
         /// Starts a panel at the screen's top left: sets the skin, opens the panel's box and draws its title. Close it with

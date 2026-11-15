@@ -1,6 +1,6 @@
 # Voice Chat
 
-Push to talk over Steam voice: hold V, and Steam records and compresses your voice; each chunk goes out as an unreliable Nucleus call on your player's object, the server relays it to the other players, and each of them decompresses it and plays it on your capsule's `AudioSource`. A capsule lights up green, and a speaking icon shows over its name tag, while its player talks.
+Push to talk over Steam voice: hold V, and Steam records and compresses your voice; each chunk goes out as an unreliable Nucleus call on your player's object, the server relays it to the other players, and each of them decompresses it and plays it on your capsule's `AudioSource`. A capsule lights up green, and a speaking icon shows over its name tag, while its player talks. Move your capsule with WASD or the arrow keys.
 
 ## Requirements
 
