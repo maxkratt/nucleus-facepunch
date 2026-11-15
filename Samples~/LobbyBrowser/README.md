@@ -7,7 +7,7 @@ A public lobby list with distance filtering and an estimated ping per lobby: hos
 - Hosting a public lobby that publishes a name, a sample tag and the host's Steam ping location as lobby data.
 - Searching with `SteamMatchmaking.LobbyList`, filtered to this sample's tag and to a distance (Close, Default, Far, Worldwide), sorted by ping.
 - Estimating each lobby's ping without contacting its host: the host publishes `SteamNetworkingUtils.LocalPingLocation` as a string, and `SteamNetworkingUtils.EstimatePingTo` combines it with this peer's own. A host whose relay measurement is not ready yet awaits `SteamNetworkingUtils.WaitForPingDataAsync` before publishing.
-- Joining a listed lobby, connecting to its owner's SteamID, and leaving it once the client stops.
+- Joining a listed lobby, connecting to the game server its host named, and leaving it once the client stops.
 
 ## Requirements
 

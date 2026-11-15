@@ -1,6 +1,6 @@
 # Lobbies
 
-Finding the host through a Steam lobby: the host starts its server and creates a lobby, and a player who enters it connects to the lobby owner's SteamID. The lobby only finds the host; the session runs over the transport like any other.
+Finding the host through a Steam lobby: the host starts its server, creates a lobby and names itself the lobby's game server, and a player who enters it connects to that SteamID. The lobby only finds the host; the session runs over the transport like any other.
 
 ## What it shows
 
@@ -29,6 +29,6 @@ On App ID 480 (Spacewar) a public lobby is visible to every developer testing on
 
 ## What to look at
 
-- `LobbiesPanel.Host`: `StartHostAsync`, then `SteamMatchmaking.CreateLobbyAsync`, so nobody can dial a server that is not yet listening. Facepunch creates the lobby invisible, so `OnLobbyCreated` sets the chosen type.
-- `LobbiesPanel.JoinLobby`: `Lobby.Join`, then `FacepunchTransport.ServerSteamId` set to the lobby owner and `StartClientAsync`.
+- `LobbiesPanel.Host`: `StartHostAsync`, then `SteamMatchmaking.CreateLobbyAsync`, so nobody can dial a server that is not yet listening. Facepunch creates the lobby invisible, so `Host` then sets the chosen type, and names this peer the game server with `Lobby.SetGameServer`.
+- `LobbiesPanel.JoinLobby`: `Lobby.Join`, then `FacepunchTransport.ServerSteamId` set to the lobby's game server (`Lobby.GetGameServer`, or `SteamMatchmaking.OnLobbyGameCreated` while waiting) and `StartClientAsync`. A lobby whose game server is no longer its owner lost its host, so the joiner leaves it at once.
 - `LobbiesPanel.OnConnectionLocalStateChanged`: a member leaves the lobby once its client stops.

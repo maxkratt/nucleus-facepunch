@@ -1,5 +1,8 @@
 # Changelog
 
+## Nucleus Facepunch.Steamworks 0.2.0
+- Lobbies and Lobby Browser samples: the host names itself the lobby's game server with `Lobby.SetGameServer`, and a joiner connects to that game server rather than the lobby owner. A player who enters a lobby whose host has left is told so at once instead of trying to connect.
+
 ## Nucleus Facepunch.Steamworks 0.1.1
 - With Ticket Authentication on, a client that leaves and joins again is no longer dropped by the server. Stopping and starting the transport used to leave the previous ticket authenticator registered beside the new one.
 - With Ticket Authentication on, a client now sends its ticket only once Steam reports it ready, rather than straight after asking for it, when Steam could still refuse it.

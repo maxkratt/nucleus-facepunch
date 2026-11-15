@@ -18,7 +18,8 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
     /// The ping is estimated without sending anything to the host: Steam's relay network measures each peer's ping to its relays, the
     /// host publishes that as a ping location string in its lobby data, and <see cref="SteamNetworkingUtils.EstimatePingTo"/> combines
     /// it with this peer's own. Both sides need relay network access, which <see cref="SteamBootstrap"/> starts. A joined player
-    /// connects to the lobby owner through <see cref="FacepunchTransport.ServerSteamId"/>, and leaves the lobby once its client stops.
+    /// connects to the lobby's game server through <see cref="FacepunchTransport.ServerSteamId"/>, and leaves the lobby once its client
+    /// stops.
     /// </remarks>
     [DisallowMultipleComponent]
     [HelpURL("https://github.com/maxkratt/nucleus-facepunch/blob/master/Samples~/LobbyBrowser/README.md")]
@@ -37,7 +38,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
         [Tooltip("The scene's Unity Transport Manager.")]
         private UnityTransportManager _unityTransportManager;
         /// <summary>
-        /// The Facepunch transport, which a joining player points at the lobby owner.
+        /// The Facepunch transport, which a joining player points at the lobby's game server.
         /// </summary>
         [SerializeField]
         [Tooltip("The scene's Facepunch Transport, set to SteamID addressing.")]
@@ -82,6 +83,11 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
         /// Whether this peer's client has connected since it last joined, so a dropped session reads differently from a failed connect.
         /// </summary>
         private bool _hasConnected;
+        /// <summary>
+        /// Whether this player has started its client since it last left, since entering a lobby and Steam's game server notice can both
+        /// name the server.
+        /// </summary>
+        private bool _hasStartedClient;
         /// <summary>
         /// Counts the times this peer has left, so a host or join still awaiting Steam can tell it belongs to a session already left.
         /// </summary>
@@ -161,6 +167,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
             _steamBootstrap.SteamShutdownStarted += OnSteamShutdownStarted;
 
             SteamMatchmaking.OnLobbyCreated += OnLobbyCreated;
+            SteamMatchmaking.OnLobbyGameCreated += OnLobbyGameCreated;
         }
 
         /// <summary>
@@ -269,6 +276,9 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
             lobby.SetData(NameKey, _lobbyNameText);
             PublishPingLocation(lobby);
 
+            // The server is already listening, so players may dial it from here on.
+            lobby.SetGameServer(SteamClient.SteamId);
+
             _statusText = "Hosting. Players can find this lobby with Search.";
         }
 
@@ -301,7 +311,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
         }
 
         /// <summary>
-        /// Enters a lobby, then starts the client toward its owner.
+        /// Enters a lobby, then starts the client toward its game server once the lobby names one.
         /// </summary>
         /// <param name="lobby">The lobby to enter.</param>
         private async void JoinLobby(Lobby lobby)
@@ -336,15 +346,39 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
             if (owner.IsMe)
                 return;
 
-            StartClient(owner.Id);
+            // A game server set before this peer entered raised no notice for it, so it is read here; otherwise OnLobbyGameCreated follows.
+            uint serverIp = 0;
+            ushort serverPort = 0;
+            SteamId serverSteamId = default;
+
+            if (!lobby.GetGameServer(ref serverIp, ref serverPort, ref serverSteamId))
+            {
+                _statusText = "Waiting for the host's server.";
+
+                return;
+            }
+
+            // The host served this lobby, so a different owner means Steam handed the lobby on after the host left.
+            if (serverSteamId.Value != owner.Id.Value)
+            {
+                Leave("The host of that lobby has left.");
+
+                return;
+            }
+
+            StartClient(serverSteamId);
         }
 
         /// <summary>
-        /// Starts this peer as a client of the lobby owner.
+        /// Starts this peer as a client of the lobby's game server, unless it already started one.
         /// </summary>
-        /// <param name="serverSteamId">The lobby owner's SteamID.</param>
+        /// <param name="serverSteamId">The game server's SteamID.</param>
         private async void StartClient(SteamId serverSteamId)
         {
+            if (_hasStartedClient)
+                return;
+
+            _hasStartedClient = true;
             _facepunchTransport.ServerSteamId = serverSteamId.Value;
             _statusText = $"Connecting to the host [{serverSteamId.Value}].";
 
@@ -363,6 +397,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
             _leaveCount++;
             _hasStarted = false;
             _hasConnected = false;
+            _hasStartedClient = false;
             _isLobbyOwner = false;
             _lobby = null;
 
@@ -434,6 +469,19 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
         }
 
         /// <summary>
+        /// Starts this player's client when the lobby it is in names its game server.
+        /// </summary>
+        /// <param name="lobby">The lobby Steam reported on.</param>
+        /// <param name="serverIp">The game server's IPv4 address, unused, since the host names itself by SteamID.</param>
+        /// <param name="serverPort">The game server's port, unused for the same reason.</param>
+        /// <param name="serverSteamId">The game server's SteamID.</param>
+        private void OnLobbyGameCreated(Lobby lobby, uint serverIp, ushort serverPort, SteamId serverSteamId)
+        {
+            if (!_isLobbyOwner && _lobby is Lobby currentLobby && currentLobby.Id.Value == lobby.Id.Value)
+                StartClient(serverSteamId);
+        }
+
+        /// <summary>
         /// Shows the session's progress, and leaves the lobby once a joined player's client stops or fails to connect, since the server it dialled is gone.
         /// </summary>
         /// <param name="connectionStateChange">The state change that was raised.</param>
@@ -470,6 +518,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
             _steamBootstrap.SteamShutdownStarted -= OnSteamShutdownStarted;
 
             SteamMatchmaking.OnLobbyCreated -= OnLobbyCreated;
+            SteamMatchmaking.OnLobbyGameCreated -= OnLobbyGameCreated;
         }
 
         /// <summary>
