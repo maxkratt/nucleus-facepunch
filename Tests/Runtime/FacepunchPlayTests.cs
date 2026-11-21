@@ -3,14 +3,20 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using CodeBoost.Performance;
 using NUnit.Framework;
+using Nucleus.Components;
 using Nucleus.Connections;
 using Nucleus.Integrations.Unity.Managers.Core;
 using Nucleus.Integrations.Unity.Managers.Transports;
+using Nucleus.Managers.Core;
 using Nucleus.Managers.Messages;
+using Nucleus.Managers.Server;
+using Nucleus.Managers.Transports;
 using Nucleus.Serializers;
+using Nucleus.Systems;
 using Nucleus.Transports;
 using Steamworks;
 using UnityEngine;
@@ -21,8 +27,9 @@ namespace Nucleus.Integrations.Facepunch.Tests
 {
     /// <summary>
     /// Play mode coverage of <see cref="FacepunchSockets"/> on a running Steam: a host's own client and a host kicking it, a remote client,
-    /// a kick with a reason, a client that disconnects and joins again, a client that sends past the server's packet limit, and reliable and
-    /// unreliable messages sent both ways, each arriving on its own channel and the reliable ones in order.
+    /// a kick with a reason, a client that disconnects and joins again, a client that sends past the server's packet limit, reliable and
+    /// unreliable messages sent both ways, each arriving on its own channel and the reliable ones in order, link status and simulated
+    /// latency, the connecting filter, launch arguments, an unreliable message overtaking a reliable burst, and late joins over wide values.
     /// </summary>
     /// <remarks>
     /// Skipped unless the Steam client is running, since there is no mock of Steam. Every peer runs in this process on one account, so
@@ -82,6 +89,42 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// How many reliable and how many unreliable messages the channel case sends in each direction.
         /// </summary>
         private const int SequencedMessageCount = 500;
+        /// <summary>
+        /// The latency the simulated conditions cases set, in milliseconds.
+        /// </summary>
+        private const uint SimulatedLatencyMilliseconds = 100;
+        /// <summary>
+        /// The size of the reliable burst an unreliable message is sent behind, in bytes.
+        /// </summary>
+        private const int BurstBytes = 400_000;
+        /// <summary>
+        /// The send rate both peers of the burst case keep to, in kilobytes per second, so the burst takes about half a second to leave.
+        /// </summary>
+        private const uint BurstSendRateKilobytesPerSecond = 768;
+        /// <summary>
+        /// How many systems the server holds before the late client joins.
+        /// </summary>
+        private const int LateJoinSystemCount = 50;
+        /// <summary>
+        /// The width of each late join system's label, in kibibytes.
+        /// </summary>
+        private const int LabelKibibytes = 64;
+        /// <summary>
+        /// How many times the world state's own size the server may send for a late join.
+        /// </summary>
+        private const double MaximumSentToStateRatio = 1.5d;
+        /// <summary>
+        /// The longest a late join may take, in seconds, many times what the defaults need to carry the state once.
+        /// </summary>
+        private const float LateJoinSeconds = 60f;
+        /// <summary>
+        /// An object pacing budget under Steam's own send rate at the default tick rate of thirty, with room for the ordinary traffic beside it.
+        /// </summary>
+        private const byte BudgetUnderSteamsOwnRateKilobytes = 7;
+        /// <summary>
+        /// Steam's own send rate, both its floor and its ceiling, in bytes per second.
+        /// </summary>
+        private const int SteamsOwnSendRateBytesPerSecond = 256 * 1024;
 
         /// <summary>
         /// Every GameObject the case created, destroyed at teardown.
@@ -112,6 +155,22 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// How many sequenced messages arrived on a channel other than the one they were sent on.
         /// </summary>
         private int _sequencedChannelMismatchCount;
+        /// <summary>
+        /// The SteamID the connecting filter was last asked about, or <see cref="FacepunchSockets.UnsetSteamId"/> before it is asked.
+        /// </summary>
+        private ulong _filteredSteamId;
+        /// <summary>
+        /// Whether the connecting filter lets clients in.
+        /// </summary>
+        private bool _isFilteredClientAllowed;
+        /// <summary>
+        /// When the reliable burst arrived, in seconds since startup, or below zero before it arrives.
+        /// </summary>
+        private float _burstArrivedSeconds = -1f;
+        /// <summary>
+        /// When the unreliable probe arrived, in seconds since startup, or below zero before it arrives.
+        /// </summary>
+        private float _probeArrivedSeconds = -1f;
 
         /// <summary>
         /// Skips the case unless Steam is running, and initializes Steam unless something already has.
@@ -151,6 +210,10 @@ namespace Nucleus.Integrations.Facepunch.Tests
             _receivedBulkBytes = 0;
             _receivedTickCount = 0;
             _sequencedChannelMismatchCount = 0;
+            _filteredSteamId = FacepunchSockets.UnsetSteamId;
+            _isFilteredClientAllowed = false;
+            _burstArrivedSeconds = -1f;
+            _probeArrivedSeconds = -1f;
 
             foreach (List<int> receivedIndices in _receivedSequencedIndices)
                 receivedIndices.Clear();
@@ -631,6 +694,291 @@ namespace Nucleus.Integrations.Facepunch.Tests
         }
 
         /// <summary>
+        /// A transport given simulated conditions clears them from Steam, which keeps them for the whole process, when it shuts down, so
+        /// they do not carry into the next play session.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator Transport_GivenNetworkConditions_ClearsThemFromSteamWhenShutDown()
+        {
+            UnityCoreManager peerCoreManager = NewPeer("SteamPeer", out UnityTransportManager peerTransportManager, out FacepunchTransport _);
+
+            yield return WaitForTask(peerTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets facepunchSockets = (FacepunchSockets)peerTransportManager.Transports[0];
+            facepunchSockets.SetNetworkConditions(new NetworkConditions { LatencyMilliseconds = SimulatedLatencyMilliseconds });
+            Assert.AreEqual((int)SimulatedLatencyMilliseconds, GetSteamsSimulatedLatencyMilliseconds(), "Steam did not take the simulated latency.");
+
+            Object.Destroy(peerCoreManager.gameObject);
+
+            yield return WaitUntil(() => GetSteamsSimulatedLatencyMilliseconds() == 0);
+            Assert.AreEqual(0, GetSteamsSimulatedLatencyMilliseconds(), "Steam still simulated latency after the transport shut down.");
+        }
+
+        /// <summary>
+        /// Returns the send latency Steam simulates for the whole process, in milliseconds.
+        /// </summary>
+        /// <returns>The latency.</returns>
+        /// <remarks>Steam stores it as an integer, which Facepunch's getter hands back unconverted in a float's bits.</remarks>
+        private static int GetSteamsSimulatedLatencyMilliseconds() => BitConverter.SingleToInt32Bits(SteamNetworkingUtils.FakeSendPacketLag);
+
+        /// <summary>
+        /// Launch arguments set the address and SteamID a client connects to and the port, and a SteamID that is not a number is refused
+        /// with an error.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator LaunchArguments_SetTheAddressSteamIdAndPort()
+        {
+            NewPeer("SteamPeer", out UnityTransportManager peerTransportManager, out FacepunchTransport _);
+
+            yield return WaitForTask(peerTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets facepunchSockets = (FacepunchSockets)peerTransportManager.Transports[0];
+            facepunchSockets.ApplyCommandLineArguments(new CommandLineArguments(new[] { $"-{FacepunchSockets.AddressArgument}", "203.0.113.7:27015", $"-{FacepunchSockets.SteamIdArgument}", "76561198012345678", $"-{Transport.PortArgument}", "27016" }));
+
+            Assert.AreEqual("203.0.113.7:27015", facepunchSockets.RemoteAddress, "The address argument was not applied.");
+            Assert.AreEqual(76561198012345678UL, facepunchSockets.RemoteSteamId, "The SteamID argument was not applied.");
+            Assert.AreEqual(27016, facepunchSockets.Configuration.Port, "The port argument was not applied to the IP port.");
+            Assert.AreEqual(27016, facepunchSockets.VirtualPort, "The port argument was not applied to the virtual port.");
+
+            LogAssert.Expect(LogType.Error, new Regex("is not a SteamID"));
+            facepunchSockets.ApplyCommandLineArguments(new CommandLineArguments(new[] { $"-{FacepunchSockets.SteamIdArgument}", "someone" }));
+
+            Assert.AreEqual(76561198012345678UL, facepunchSockets.RemoteSteamId, "A SteamID argument that is not a number replaced the one set before.");
+        }
+
+        /// <summary>
+        /// A remote client's link has a Steam status on both sides, and a host's own client, paired in process, has none.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator RemoteClient_ByIpAddress_HasALinkStatusOnBothSides_AndTheHostsOwnClientHasNone()
+        {
+            ushort port = ProbeFreeUdpPort();
+            UnityCoreManager hostCoreManager = NewPeer("SteamHost", out UnityTransportManager hostTransportManager, out FacepunchTransport _);
+
+            yield return WaitForTask(hostTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets hostFacepunchSockets = (FacepunchSockets)hostTransportManager.Transports[0];
+            hostFacepunchSockets.Addressing = FacepunchAddressing.IpAddress;
+            hostFacepunchSockets.SetPort(port);
+
+            yield return WaitForTask(hostTransportManager.StartHostAsync());
+            yield return WaitUntil(() => IsClientAuthenticated(hostCoreManager));
+            Assert.IsTrue(TryGetOwnClientConnection(hostCoreManager, hostFacepunchSockets, out Connection ownClientConnection), "The host's own client never joined.");
+
+            UnityCoreManager clientCoreManager = NewPeer("SteamClient", out UnityTransportManager clientTransportManager, out FacepunchTransport clientFacepunchTransport);
+            clientFacepunchTransport.RemoteAddress = $"127.0.0.1:{port}";
+
+            yield return WaitForTask(clientTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets clientFacepunchSockets = (FacepunchSockets)clientTransportManager.Transports[0];
+            clientFacepunchSockets.Addressing = FacepunchAddressing.IpAddress;
+
+            yield return WaitForTask(clientTransportManager.StartClientAsync());
+            yield return WaitUntil(() => IsClientAuthenticated(clientCoreManager) && hostCoreManager.CoreManager.TransportManager.ActiveConnections.Count == 2);
+            Assert.IsTrue(IsClientAuthenticated(clientCoreManager), "The remote client never authenticated.");
+
+            Connection remoteClientConnection = null;
+
+            foreach (Connection activeConnection in hostCoreManager.CoreManager.TransportManager.ActiveConnections)
+            {
+                if (!hostFacepunchSockets.IsOwnClientConnection(activeConnection))
+                    remoteClientConnection = activeConnection;
+            }
+
+            TransportManager clientTransportManagerCore = clientCoreManager.CoreManager.TransportManager;
+            clientTransportManagerCore.TryGetLocalClientConnection(out Connection clientConnection);
+            clientTransportManagerCore.TryGetServerConnection(out Connection serverConnection);
+
+            Assert.IsNotNull(remoteClientConnection, "The host holds no remote client.");
+            Assert.IsTrue(hostFacepunchSockets.TryGetLinkStatus(remoteClientConnection, out SteamLinkStatus _), "The host read no link status for its remote client.");
+            Assert.IsTrue(clientFacepunchSockets.TryGetLinkStatus(clientConnection, out SteamLinkStatus _), "The client read no link status through its own Connection.");
+            Assert.IsTrue(clientFacepunchSockets.TryGetLinkStatus(serverConnection, out SteamLinkStatus _), "The client read no link status through its server Connection.");
+            Assert.IsFalse(hostFacepunchSockets.TryGetLinkStatus(ownClientConnection, out SteamLinkStatus _), "The host's own client, paired in process, read a Steam link status.");
+        }
+
+        /// <summary>
+        /// Simulated latency reaches Steam: the ping Steam measures on a remote client's link rises by well over the latency set, since
+        /// both peers share this process and Steam delays each one's sends, and falls back once the conditions are cleared.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator RemoteClient_ByIpAddress_UnderSimulatedLatency_SteamsPingRises()
+        {
+            yield return StartServerAndRemoteClient(out UnityCoreManager serverCoreManager, out UnityCoreManager clientCoreManager, out UnityTransportManager _);
+            Assert.IsTrue(TryGetRemoteClientConnection(serverCoreManager, out Connection remoteClientConnection), "The server holds no remote client.");
+
+            FacepunchSockets serverFacepunchSockets = (FacepunchSockets)serverCoreManager.GetComponent<UnityTransportManager>().Transports[0];
+            MessageManager clientMessageManager = clientCoreManager.CoreManager.MessageManager;
+            clientMessageManager.RegisterMessageHandler<SteamPlayTestPayload>(OnTickReceived);
+
+            serverFacepunchSockets.TryGetLinkStatus(remoteClientConnection, out SteamLinkStatus baselineLinkStatus);
+            int raisedPingMilliseconds = baselineLinkStatus.PingMilliseconds + (int)SimulatedLatencyMilliseconds * 3 / 2;
+
+            try
+            {
+                serverFacepunchSockets.SetNetworkConditions(new NetworkConditions { LatencyMilliseconds = SimulatedLatencyMilliseconds });
+
+                yield return WaitUntil(() => IsPingAtLeast(serverFacepunchSockets, remoteClientConnection, raisedPingMilliseconds));
+                serverFacepunchSockets.TryGetLinkStatus(remoteClientConnection, out SteamLinkStatus raisedLinkStatus);
+                Assert.GreaterOrEqual(raisedLinkStatus.PingMilliseconds, raisedPingMilliseconds, $"Steam's ping rose from [{baselineLinkStatus.PingMilliseconds}] ms only to [{raisedLinkStatus.PingMilliseconds}] ms under [{SimulatedLatencyMilliseconds}] ms of simulated latency.");
+
+                serverFacepunchSockets.SetNetworkConditions(networkConditions: null);
+
+                yield return WaitUntil(() => !IsPingAtLeast(serverFacepunchSockets, remoteClientConnection, raisedPingMilliseconds));
+                serverFacepunchSockets.TryGetLinkStatus(remoteClientConnection, out SteamLinkStatus clearedLinkStatus);
+                Assert.Less(clearedLinkStatus.PingMilliseconds, raisedPingMilliseconds, "Steam's ping stayed raised after the conditions were cleared.");
+            }
+            finally
+            {
+                serverFacepunchSockets.SetNetworkConditions(networkConditions: null);
+                clientMessageManager.UnregisterMessageHandler<SteamPlayTestPayload>(OnTickReceived);
+            }
+        }
+
+        /// <summary>
+        /// A client the connecting filter refuses never joins, the filter is asked with the client's own SteamID, and the same client
+        /// joins once the filter lets it in.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator RemoteClient_RefusedByTheConnectingFilter_NeverJoins_AndJoinsOnceLetIn()
+        {
+            ushort port = ProbeFreeUdpPort();
+
+            UnityCoreManager serverCoreManager = NewPeer("SteamServer", out UnityTransportManager serverTransportManager, out FacepunchTransport serverFacepunchTransport);
+            serverFacepunchTransport.ConnectingClientFilter = FilterConnectingClient;
+
+            yield return WaitForTask(serverTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets serverFacepunchSockets = (FacepunchSockets)serverTransportManager.Transports[0];
+            serverFacepunchSockets.Addressing = FacepunchAddressing.IpAddress;
+            serverFacepunchSockets.SetPort(port);
+
+            yield return WaitForTask(serverTransportManager.StartServerAsync());
+
+            UnityCoreManager clientCoreManager = NewPeer("SteamClient", out UnityTransportManager clientTransportManager, out FacepunchTransport clientFacepunchTransport);
+            clientFacepunchTransport.RemoteAddress = $"127.0.0.1:{port}";
+
+            yield return WaitForTask(clientTransportManager.EnsureAddedAsync());
+
+            ((FacepunchSockets)clientTransportManager.Transports[0]).Addressing = FacepunchAddressing.IpAddress;
+
+            LogAssert.ignoreFailingMessages = true;
+
+            try
+            {
+                yield return WaitForTask(clientTransportManager.StartClientAsync());
+                yield return WaitUntil(() => _filteredSteamId is not FacepunchSockets.UnsetSteamId && IsClientDisconnected(clientCoreManager));
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
+
+            Assert.AreEqual(SteamClient.SteamId.Value, _filteredSteamId, "The filter was not asked with the connecting client's SteamID.");
+            Assert.IsTrue(IsClientDisconnected(clientCoreManager), "A client the filter refused was never closed.");
+            Assert.IsFalse(IsClientAuthenticated(clientCoreManager), "A client the filter refused joined.");
+            Assert.AreEqual(0, serverCoreManager.CoreManager.TransportManager.ActiveConnections.Count, "The server holds a client the filter refused.");
+
+            _isFilteredClientAllowed = true;
+
+            yield return WaitForTask(clientTransportManager.StartClientAsync());
+            yield return WaitUntil(() => IsClientAuthenticated(clientCoreManager));
+            Assert.IsTrue(IsClientAuthenticated(clientCoreManager), "The client never joined once the filter let it in.");
+        }
+
+        /// <summary>
+        /// An unreliable message sent behind a reliable burst still queued in Steam arrives before the burst does, because the two ride
+        /// lanes of their own.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator UnreliableMessage_SentBehindAReliableBurst_ArrivesFirst()
+        {
+            int steamSendRateMinimumBytesPerSecond = SteamNetworkingUtils.SendRateMin;
+            int steamSendRateMaximumBytesPerSecond = SteamNetworkingUtils.SendRateMax;
+            ushort port = ProbeFreeUdpPort();
+
+            UnityCoreManager serverCoreManager = NewPeer("SteamServer", out UnityTransportManager serverTransportManager, out FacepunchTransport _);
+            UnityCoreManager clientCoreManager = NewPeer("SteamClient", out UnityTransportManager clientTransportManager, out FacepunchTransport clientFacepunchTransport);
+            clientFacepunchTransport.RemoteAddress = $"127.0.0.1:{port}";
+
+            yield return WaitForTask(serverTransportManager.EnsureAddedAsync());
+            yield return WaitForTask(clientTransportManager.EnsureAddedAsync());
+
+            // Slow enough that the burst takes about half a second to leave, so anything queued behind it would plainly wait. Steam's
+            // rates are process wide, so both peers set them.
+            UseIpAddressingAndSendRate((FacepunchSockets)serverTransportManager.Transports[0], port, BurstSendRateKilobytesPerSecond);
+            UseIpAddressingAndSendRate((FacepunchSockets)clientTransportManager.Transports[0], port, BurstSendRateKilobytesPerSecond);
+
+            MessageManager clientMessageManager = clientCoreManager.CoreManager.MessageManager;
+            clientMessageManager.RegisterMessageHandler<SteamPlayTestBulkMessage>(OnBurstReceived);
+            clientMessageManager.RegisterMessageHandler<SteamPlayTestPayload>(OnProbeReceived);
+
+            try
+            {
+                yield return WaitForTask(serverTransportManager.StartServerAsync());
+                yield return WaitForTask(clientTransportManager.StartClientAsync());
+                yield return WaitUntil(() => IsClientAuthenticated(clientCoreManager) && TryGetRemoteClientConnection(serverCoreManager, out Connection _));
+                Assert.IsTrue(TryGetRemoteClientConnection(serverCoreManager, out Connection remoteClientConnection), "The server holds no remote client.");
+
+                remoteClientConnection.SendMessage(Channel.Reliable, new SteamPlayTestBulkMessage { Bytes = new(new byte[BurstBytes]) });
+
+                // Two frames later, so the burst is already in Steam's queue when the unreliable message is handed over.
+                yield return null;
+                yield return null;
+
+                remoteClientConnection.SendMessage(Channel.Unreliable, new SteamPlayTestPayload { Text = "probe" });
+
+                yield return WaitUntil(() => _burstArrivedSeconds >= 0f && _probeArrivedSeconds >= 0f);
+            }
+            finally
+            {
+                clientMessageManager.UnregisterMessageHandler<SteamPlayTestBulkMessage>(OnBurstReceived);
+                clientMessageManager.UnregisterMessageHandler<SteamPlayTestPayload>(OnProbeReceived);
+                SteamNetworkingUtils.SendRateMin = steamSendRateMinimumBytesPerSecond;
+                SteamNetworkingUtils.SendRateMax = steamSendRateMaximumBytesPerSecond;
+            }
+
+            Assert.GreaterOrEqual(_burstArrivedSeconds, 0f, "The reliable burst never arrived.");
+            Assert.GreaterOrEqual(_probeArrivedSeconds, 0f, "The unreliable message never arrived.");
+            Assert.Less(_probeArrivedSeconds, _burstArrivedSeconds, "The unreliable message waited behind the reliable burst.");
+        }
+
+        /// <summary>
+        /// A late join over a world of 64 KiB values, at the component's default send rates, arrives whole having been sent little more
+        /// than the state.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(180000)]
+        public IEnumerator LateJoin_OverWideValues_AtTheDefaults_IsSentTheStateAboutOnce()
+        {
+            yield return RunLateJoin(ServerManager.DefaultMaximumObjectKilobytesPerTick, isSteamsOwnSendRate: false);
+        }
+
+        /// <summary>
+        /// The same join at Steam's own send rate of 256 KiB a second, paced under it, arrives whole having been sent little more than the
+        /// state, though each value takes several ticks to arrive.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(180000)]
+        public IEnumerator LateJoin_OverWideValues_AtSteamsOwnRate_IsSentTheStateAboutOnce()
+        {
+            yield return RunLateJoin(BudgetUnderSteamsOwnRateKilobytes, isSteamsOwnSendRate: true);
+        }
+
+        /// <summary>
         /// Records the reason a kicked client received.
         /// </summary>
         /// <param name="messageContext">The context of the message.</param>
@@ -663,6 +1011,179 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// <param name="messageContext">The context the message arrived in.</param>
         /// <param name="steamPlayTestPayload">The message.</param>
         private void OnTickReceived(in MessageContext messageContext, SteamPlayTestPayload steamPlayTestPayload) => _receivedTickCount++;
+
+        /// <summary>
+        /// Records when the reliable burst arrived, then returns its pooled array.
+        /// </summary>
+        /// <param name="messageContext">The context the message arrived in.</param>
+        /// <param name="steamPlayTestBulkMessage">The message.</param>
+        private void OnBurstReceived(in MessageContext messageContext, SteamPlayTestBulkMessage steamPlayTestBulkMessage)
+        {
+            _burstArrivedSeconds = Time.realtimeSinceStartup;
+
+            if (messageContext.IsDeserialized && steamPlayTestBulkMessage.Bytes.Array is not null)
+                TrackedArrayPool<byte>.Return(steamPlayTestBulkMessage.Bytes.Array);
+        }
+
+        /// <summary>
+        /// Records when the unreliable probe arrived.
+        /// </summary>
+        /// <param name="messageContext">The context the message arrived in.</param>
+        /// <param name="steamPlayTestPayload">The message.</param>
+        private void OnProbeReceived(in MessageContext messageContext, SteamPlayTestPayload steamPlayTestPayload) => _probeArrivedSeconds = Time.realtimeSinceStartup;
+
+        /// <summary>
+        /// Records the SteamID a connecting client is asking under, and lets it in only once the case allows it.
+        /// </summary>
+        /// <param name="steamId">The connecting client's SteamID64.</param>
+        /// <returns><see langword="true"/> to let the client in.</returns>
+        private bool FilterConnectingClient(ulong steamId)
+        {
+            _filteredSteamId = steamId;
+
+            return _isFilteredClientAllowed;
+        }
+
+        /// <summary>
+        /// Starts a server holding a world of wide values, joins a client to it by IP address, and checks the client holds every value
+        /// having been sent little more than the state.
+        /// </summary>
+        /// <param name="maximumObjectKilobytesPerTick">The server's object pacing budget.</param>
+        /// <param name="isSteamsOwnSendRate">True to leave both peers' send rates unset at Steam's own, false for the component's defaults.</param>
+        /// <returns>The coroutine driving the join.</returns>
+        private IEnumerator RunLateJoin(byte maximumObjectKilobytesPerTick, bool isSteamsOwnSendRate)
+        {
+            int steamSendRateMinimumBytesPerSecond = SteamNetworkingUtils.SendRateMin;
+            int steamSendRateMaximumBytesPerSecond = SteamNetworkingUtils.SendRateMax;
+            ushort port = ProbeFreeUdpPort();
+
+            UnityCoreManager serverCoreManager = NewPeer("SteamServer", out UnityTransportManager serverTransportManager, out FacepunchTransport _);
+            UnityCoreManager clientCoreManager = NewPeer("SteamClient", out UnityTransportManager clientTransportManager, out FacepunchTransport clientFacepunchTransport);
+            clientFacepunchTransport.RemoteAddress = $"127.0.0.1:{port}";
+
+            yield return WaitForTask(serverTransportManager.EnsureAddedAsync());
+            yield return WaitForTask(clientTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets serverFacepunchSockets = (FacepunchSockets)serverTransportManager.Transports[0];
+            FacepunchSockets clientFacepunchSockets = (FacepunchSockets)clientTransportManager.Transports[0];
+
+            // Steam's rates are process wide and an earlier case may have moved them, so Steam's own are written back first.
+            if (isSteamsOwnSendRate)
+            {
+                SteamNetworkingUtils.SendRateMin = SteamsOwnSendRateBytesPerSecond;
+                SteamNetworkingUtils.SendRateMax = SteamsOwnSendRateBytesPerSecond;
+                UseIpAddressingAndSendRate(serverFacepunchSockets, port, FacepunchSockets.UnsetSendSetting);
+                UseIpAddressingAndSendRate(clientFacepunchSockets, port, FacepunchSockets.UnsetSendSetting);
+            }
+            else
+            {
+                serverFacepunchSockets.Addressing = FacepunchAddressing.IpAddress;
+                serverFacepunchSockets.SetPort(port);
+                clientFacepunchSockets.Addressing = FacepunchAddressing.IpAddress;
+            }
+
+            CoreManager server = serverCoreManager.CoreManager;
+            CoreManager client = clientCoreManager.CoreManager;
+            server.ServerManager.MaximumObjectKilobytesPerTick = maximumObjectKilobytesPerTick;
+
+            try
+            {
+                yield return WaitForTask(serverTransportManager.StartServerAsync());
+                yield return WaitUntil(() => server.TransportManager.IsServerStarted);
+                Assert.IsTrue(server.TransportManager.IsServerStarted, "The server never started.");
+
+                uint[] systemIds = new uint[LateJoinSystemCount];
+                string[] labels = new string[LateJoinSystemCount];
+                System.Random random = new(LabelKibibytes);
+                char[] characters = new char[LabelKibibytes * 1024];
+
+                for (int systemIndex = 0; systemIndex < LateJoinSystemCount; systemIndex++)
+                {
+                    Assert.IsTrue(NetworkSystemPool.TryRent<NetworkSystem, SteamPlayTestLargeLabelComponent>(server, out NetworkSystem serverSystem, canStartSystem: true), "The server could not start a system.");
+
+                    for (int characterIndex = 0; characterIndex < characters.Length; characterIndex++)
+                        characters[characterIndex] = (char)random.Next('a', 'z' + 1);
+
+                    labels[systemIndex] = new(characters);
+                    Assert.IsTrue(serverSystem.TryGetComponent(out SteamPlayTestLargeLabelComponent serverComponent), "The server's system holds no label component.");
+                    serverComponent.Label.Value = labels[systemIndex];
+                    systemIds[systemIndex] = serverSystem.Id;
+                }
+
+                yield return new WaitForSecondsRealtime(0.5f);
+
+                long sentBytesBeforeJoin = server.TransportManager.TotalBytesSent;
+                float joinStartedSeconds = Time.realtimeSinceStartup;
+
+                yield return WaitForTask(clientTransportManager.StartClientAsync());
+                yield return WaitUntil(() => CountLabelsHeld(client, systemIds, labels) == LateJoinSystemCount, LateJoinSeconds);
+
+                int heldCount = CountLabelsHeld(client, systemIds, labels);
+                long stateBytes = (long)LateJoinSystemCount * LabelKibibytes * 1024;
+                long sentBytes = server.TransportManager.TotalBytesSent - sentBytesBeforeJoin;
+                double sentToStateRatio = (double)sentBytes / stateBytes;
+                string joinSummary = $"[{LateJoinSystemCount}] x [{LabelKibibytes}] KiB at [{maximumObjectKilobytesPerTick}] kB a tick, Steam's own rate [{isSteamsOwnSendRate}]: held [{heldCount}] after [{Time.realtimeSinceStartup - joinStartedSeconds:F1}] s, state [{stateBytes}] bytes, sent [{sentBytes}] ({sentToStateRatio:F2}x), received [{client.TransportManager.TotalBytesReceived}].";
+
+                Debug.Log($"[{nameof(FacepunchPlayTests)}] late join {joinSummary}");
+
+                Assert.AreEqual(LateJoinSystemCount, heldCount, joinSummary);
+                Assert.LessOrEqual(sentToStateRatio, MaximumSentToStateRatio, joinSummary);
+            }
+            finally
+            {
+                SteamNetworkingUtils.SendRateMin = steamSendRateMinimumBytesPerSecond;
+                SteamNetworkingUtils.SendRateMax = steamSendRateMaximumBytesPerSecond;
+            }
+        }
+
+        /// <summary>
+        /// Counts the systems a client holds with the server's label, resolving each by Id on every read.
+        /// </summary>
+        /// <param name="client">The client peer.</param>
+        /// <param name="systemIds">The server's systems.</param>
+        /// <param name="labels">Each system's label.</param>
+        /// <returns>How many systems the client holds with the right label.</returns>
+        private static int CountLabelsHeld(CoreManager client, uint[] systemIds, string[] labels)
+        {
+            int heldCount = 0;
+
+            for (int systemIndex = 0; systemIndex < systemIds.Length; systemIndex++)
+            {
+                if (client.SystemManager.TryGetSystemReference(systemIds[systemIndex], out NetworkSystem clientSystem) && clientSystem.TryGetComponent(out SteamPlayTestLargeLabelComponent clientComponent) && clientComponent.Label.Value == labels[systemIndex])
+                    heldCount++;
+            }
+
+            return heldCount;
+        }
+
+        /// <summary>
+        /// Switches an added peer's transport to IP addressing on a port, with both send rates at one value.
+        /// </summary>
+        /// <param name="facepunchSockets">The peer's transport.</param>
+        /// <param name="port">The port the peer listens on, when it is a server.</param>
+        /// <param name="sendRateKilobytesPerSecond">The send rate floor and ceiling, or <see cref="FacepunchSockets.UnsetSendSetting"/> to leave Steam's.</param>
+        private static void UseIpAddressingAndSendRate(FacepunchSockets facepunchSockets, ushort port, uint sendRateKilobytesPerSecond)
+        {
+            facepunchSockets.Addressing = FacepunchAddressing.IpAddress;
+            facepunchSockets.SetPort(port);
+            facepunchSockets.SendRateMinimumKilobytesPerSecond = sendRateKilobytesPerSecond;
+            facepunchSockets.SendRateMaximumKilobytesPerSecond = sendRateKilobytesPerSecond;
+        }
+
+        /// <summary>
+        /// Returns whether Steam's measured ping on a server's link to a client has reached a figure, sending a little on it so the
+        /// measurement keeps moving.
+        /// </summary>
+        /// <param name="serverFacepunchSockets">The server's transport.</param>
+        /// <param name="connection">The server's Connection for the client.</param>
+        /// <param name="pingMilliseconds">The figure.</param>
+        /// <returns><see langword="true"/> once Steam's ping is at least <paramref name="pingMilliseconds"/>.</returns>
+        private static bool IsPingAtLeast(FacepunchSockets serverFacepunchSockets, Connection connection, int pingMilliseconds)
+        {
+            connection.SendMessage(Channel.Reliable, new SteamPlayTestPayload { Text = "ping" });
+
+            return serverFacepunchSockets.TryGetLinkStatus(connection, out SteamLinkStatus linkStatus) && linkStatus.PingMilliseconds >= pingMilliseconds;
+        }
 
         /// <summary>
         /// Records the index of a sequenced message in the bucket of its direction and mode, and counts it when it arrived on the wrong channel.
@@ -786,6 +1307,14 @@ namespace Nucleus.Integrations.Facepunch.Tests
             unityCoreManager.CoreManager.TransportManager.TryGetLocalClientConnection(out Connection localClientConnection) && localClientConnection.LocalState is LocalConnectionState.Connected;
 
         /// <summary>
+        /// Returns whether a peer's local client has come all the way down to disconnected.
+        /// </summary>
+        /// <param name="unityCoreManager">The peer to ask.</param>
+        /// <returns><see langword="true"/> once its client is disconnected.</returns>
+        private static bool IsClientDisconnected(UnityCoreManager unityCoreManager) =>
+            unityCoreManager.CoreManager.TransportManager.TryGetLocalClientConnection(out Connection localClientConnection) && localClientConnection.LocalState is LocalConnectionState.Disconnected;
+
+        /// <summary>
         /// Returns whether a peer's local client is connected and authenticated.
         /// </summary>
         /// <param name="unityCoreManager">The peer to ask.</param>
@@ -904,10 +1433,11 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// Yields frames, pumping Steam's callbacks each one, until a condition holds or the wait runs out.
         /// </summary>
         /// <param name="condition">The condition waited for.</param>
+        /// <param name="seconds">The longest the wait runs, in seconds.</param>
         /// <returns>The coroutine driving the wait.</returns>
-        private static IEnumerator WaitUntil(Func<bool> condition)
+        private static IEnumerator WaitUntil(Func<bool> condition, float seconds = MaximumWaitSeconds)
         {
-            float deadlineSeconds = Time.realtimeSinceStartup + MaximumWaitSeconds;
+            float deadlineSeconds = Time.realtimeSinceStartup + seconds;
 
             while (!condition() && Time.realtimeSinceStartup < deadlineSeconds)
             {
@@ -981,5 +1511,16 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// Whether the message was sent on the reliable channel, rather than the unreliable one.
         /// </summary>
         public bool IsSentReliable;
+    }
+
+    /// <summary>
+    /// A component holding one wide string, so a world of these is far wider than a single tick of a slow link.
+    /// </summary>
+    public partial class SteamPlayTestLargeLabelComponent : NetworkComponent
+    {
+        /// <summary>
+        /// The string, many kilobytes wide in the cases that use it.
+        /// </summary>
+        public readonly NetworkMember<string> Label = new();
     }
 }

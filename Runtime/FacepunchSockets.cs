@@ -292,7 +292,7 @@ namespace Nucleus.Integrations.Facepunch
         /// <summary>
         /// Reads Steam's live status of the link carrying a Connection.
         /// </summary>
-        /// <param name="connection">A remote client on this peer's server, or this peer's own client Connection for its link to the server.</param>
+        /// <param name="connection">A remote client on this peer's server, or, for its link to the server, this peer's own client Connection or its server Connection.</param>
         /// <param name="linkStatus">The status, when there is a Steam link to read.</param>
         /// <returns><see langword="true"/> when the Connection rides a Steam link; the host's own client, paired in process, has none.</returns>
         /// <remarks>Facepunch allocates on every status read, 96 bytes on Mono and 192 on IL2CPP, so read it a few times a second rather than every frame.</remarks>
@@ -303,8 +303,9 @@ namespace Nucleus.Integrations.Facepunch
             if (connection is null)
                 return false;
 
-            // The host's own client is both of these Connections at once, and has no Steam link on either side.
-            if (ClientSocket is not null && connection == ClientSocket.Connection)
+            // A client's server Connection is the server socket's own. The host's own client is both of these Connections at once, and
+            // has no Steam link on either side.
+            if (ClientSocket is not null && (connection == ClientSocket.Connection || connection == ServerSocket?.Connection))
                 return ClientSocket.TryGetLinkStatus(out linkStatus);
 
             return ServerSocket is not null && ServerSocket.TryGetLinkStatus(connection, out linkStatus);
@@ -345,9 +346,17 @@ namespace Nucleus.Integrations.Facepunch
         }
 
         /// <inheritdoc/>
+        /// <remarks>Clears any conditions this transport gave Steam, which keeps them for the whole process, so they do not carry into the next session.</remarks>
         public override async Task ShutdownAsync()
         {
             await base.ShutdownAsync();
+
+            // The transport keeps its own conditions, so a later start applies them again.
+            if (_networkConditions is not null && !IsSteamShutDown())
+            {
+                SteamNetworkingUtils.FakeSendPacketLag = 0f;
+                SteamNetworkingUtils.FakeSendPacketLoss = 0f;
+            }
 
             if (!_isStepCallbackRegistered)
                 return;

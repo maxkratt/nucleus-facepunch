@@ -95,8 +95,8 @@ These live on `FacepunchSockets`, which `FacepunchTransport.FacepunchSockets` an
 - `ConnectingClientFilter`, a `bool (ulong steamId)` called on the network loop thread before the engine sees a client. Return `false` to refuse it, for a ban list or lobby members only.
 - `ServerSteamId`, the SteamID of the server this peer runs, which clients set as their `RemoteSteamId`; `UnsetSteamId` (0) while it is not listening.
 - `ServerFakeAddress`, the address Steam grants a Fake IP server once it is ready. A game server's grant can come after its logon, seconds after the start; a slow grant is logged as a warning and applied when it arrives.
-- `TryGetLinkStatus(connection, out SteamLinkStatus)`, Steam's ping, connection quality and pending bytes for one link, as read-only properties. Facepunch allocates 96 to 192 bytes on each read, so poll it a few times a second, not every frame.
-- `SetNetworkConditions` simulates latency and loss through Steam's own settings, mid-session too. They are process wide, and the host's own client is never delayed: judge lag from a separate client.
+- `TryGetLinkStatus(connection, out SteamLinkStatus)`, Steam's ping, connection quality and pending bytes for one link, as read-only properties. On a server, pass a remote client's Connection; on a client, either its own Connection or its server Connection. Facepunch allocates 96 to 192 bytes on each read, so poll it a few times a second, not every frame.
+- `SetNetworkConditions` simulates latency and loss through Steam's own settings, mid-session too. They are process wide, so the transport clears them from Steam when it shuts down, and the host's own client is never delayed: judge lag from a separate client.
 - `RefusedReliableSendCount`, `RefusedUnreliableSendCount`, `LargestReliablePacketBytes`, `LargestUnreliablePacketBytes` and `ServerReceiveMicroseconds`, for diagnostics.
 
 ### Launch arguments

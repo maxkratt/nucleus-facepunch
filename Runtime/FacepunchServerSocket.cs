@@ -744,7 +744,10 @@ namespace Nucleus.Integrations.Facepunch
         /// <summary>
         /// Closes the listen socket and stops hearing from it.
         /// </summary>
-        /// <remarks>Facepunch reports a locally closed connection later; without an interface that report goes nowhere.</remarks>
+        /// <remarks>
+        /// Facepunch reports a locally closed connection later; without an interface that report goes nowhere. A Steam shut down under
+        /// the server took the socket with it, and Facepunch throws on closing it then.
+        /// </remarks>
         private void ReleaseListenSocket()
         {
             SteamNetworkingSockets.OnFakeIPResult -= OnFakeIpResult;
@@ -753,7 +756,9 @@ namespace Nucleus.Integrations.Facepunch
             if (_socketManager is not null)
             {
                 _socketManager.Interface = null;
-                _socketManager.Close();
+
+                if (!FacepunchSockets.IsSteamShutDown())
+                    _socketManager.Close();
             }
 
             _socketManager = null;

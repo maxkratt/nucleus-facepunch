@@ -1,5 +1,10 @@
 # Changelog
 
+## Nucleus Facepunch.Steamworks 0.3.1
+- Simulated latency and loss set with `SetNetworkConditions` are cleared from Steam when the transport shuts down. Steam keeps them for the whole process, so they used to carry into the next session.
+- `FacepunchSockets.TryGetLinkStatus` on a client now reads the link through the client's server Connection as well as its own Connection.
+- A server whose Steam the game shuts down while it runs now stops without a `NullReferenceException`.
+
 ## Nucleus Facepunch.Steamworks 0.3.0
 Requires Nucleus 0.6.0 or later.
 - Members renamed to match Nucleus Steamworks: `ServerSteamId` is now `RemoteSteamId` and `ServerAddress` is now `RemoteAddress`, on `FacepunchTransport` and `FacepunchSockets`. `FacepunchSockets.RemoteAddress` defaults to an empty string. The inspector labels them Remote SteamID, Remote Address and Remote Fake Address.
