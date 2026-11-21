@@ -61,8 +61,8 @@ The Unity component. Its settings are copied into the engine transport, `Facepun
 | Setting | Default | What it does |
 |---|---|---|
 | Addressing | Steam ID | How the server is reached: Steam ID through Valve's relay, IP Address dialled directly, or Fake IP, an address Steam grants a game server so its real IP stays hidden. |
-| Server's SteamID | `0` | Steam ID only. The SteamID64 a client connects to, such as `76561198012345678`. Zero, or any value while this peer runs a server, joins this peer's own server. |
-| Server's Address, Server's Fake Address | empty | IP Address and Fake IP. The `ip`, `ip:port`, `[ipv6]:port` or `localhost` (the IPv4 loopback) a client connects to; for a fake IP, the address the server logs. Host names are not looked up. Empty joins this peer's own server. |
+| Remote SteamID | `0` | Steam ID only. The SteamID64 a client connects to, such as `76561198012345678`. Zero, or any value while this peer runs a server, joins this peer's own server. |
+| Remote Address, Remote Fake Address | empty | IP Address and Fake IP. The `ip`, `ip:port`, `[ipv6]:port` or `localhost` (the IPv4 loopback) a client connects to; for a fake IP, the address the server logs. Host names are not looked up. Empty joins this peer's own server. |
 | Virtual Port, Port | `27015` | Steam's virtual port by SteamID, or the UDP port the server listens on by IP address. Server and clients must agree. A fake IP ignores it. |
 | Bind Address | empty | IP Address servers. The local IPv4 or IPv6 address, or `localhost`, to listen on. Empty listens on every interface. |
 

@@ -2,7 +2,7 @@
 
 ## Nucleus Facepunch.Steamworks 0.3.0
 Requires Nucleus 0.6.0 or later.
-- Members renamed to match Nucleus Steamworks: `ServerSteamId` is now `RemoteSteamId` and `ServerAddress` is now `RemoteAddress`, on `FacepunchTransport` and `FacepunchSockets`. `FacepunchSockets.RemoteAddress` defaults to an empty string.
+- Members renamed to match Nucleus Steamworks: `ServerSteamId` is now `RemoteSteamId` and `ServerAddress` is now `RemoteAddress`, on `FacepunchTransport` and `FacepunchSockets`. `FacepunchSockets.RemoteAddress` defaults to an empty string. The inspector labels them Remote SteamID, Remote Address and Remote Fake Address.
 - Send rates are set in kilobytes (1,024 bytes) per second: `SendRateMinimumKilobytesPerSecond` (default 256) and `SendRateMaximumKilobytesPerSecond` (default 4096) replace the `BytesPerSecond` members on `FacepunchSockets` and the component.
 - Scenes saved with an earlier version lose the component's server SteamID, server address and send rates, which have to be set again.
 - New `FacepunchSockets.ServerSteamId`, read only: the SteamID of the server this peer runs, or `UnsetSteamId` while it is not listening. The inspector's server row shows it.

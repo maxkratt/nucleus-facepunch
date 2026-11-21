@@ -521,9 +521,9 @@ namespace Nucleus.Integrations.Facepunch.Editor
         {
             return addressing switch
             {
-                FacepunchAddressing.IpAddress => "Server's Address",
-                FacepunchAddressing.FakeIp => "Server's Fake Address",
-                _ => "Server's SteamID"
+                FacepunchAddressing.IpAddress => "Remote Address",
+                FacepunchAddressing.FakeIp => "Remote Fake Address",
+                _ => "Remote SteamID"
             };
         }
 
