@@ -67,9 +67,9 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// </summary>
         private const float BulkWaitSeconds = 240f;
         /// <summary>
-        /// The send rate floor the bulk join case raises Steam's to, matching the component's default ceiling, in bytes per second.
+        /// The send rate floor the bulk join case raises Steam's to, matching the component's default ceiling, in kilobytes per second.
         /// </summary>
-        private const uint RaisedSendRateMinimumBytesPerSecond = 4 * 1024 * 1024;
+        private const uint RaisedSendRateMinimumKilobytesPerSecond = 4096;
         /// <summary>
         /// The length of the first client's payload in the per-connection case, distinct so each arrival can be told apart.
         /// </summary>
@@ -291,7 +291,7 @@ namespace Nucleus.Integrations.Facepunch.Tests
             };
 
             UnityCoreManager secondClientCoreManager = NewPeer("SteamSecondClient", out UnityTransportManager secondClientTransportManager, out FacepunchTransport secondClientFacepunchTransport);
-            secondClientFacepunchTransport.ServerAddress = $"127.0.0.1:{serverFacepunchSockets.Configuration.Port}";
+            secondClientFacepunchTransport.RemoteAddress = $"127.0.0.1:{serverFacepunchSockets.Configuration.Port}";
 
             yield return WaitForTask(secondClientTransportManager.EnsureAddedAsync());
 
@@ -438,9 +438,9 @@ namespace Nucleus.Integrations.Facepunch.Tests
         [Timeout(300000)]
         public IEnumerator RemoteClient_JoinsAndIsSentABulkWorldState_ArrivesWholeWhileStateFlows([Values(0u, 100u)] uint latencyMilliseconds, [Values(false, true)] bool isSendRateFloorRaised)
         {
-            uint sendRateMinimumBytesPerSecond = isSendRateFloorRaised ? RaisedSendRateMinimumBytesPerSecond : FacepunchSockets.UnsetSendSetting;
+            uint sendRateMinimumKilobytesPerSecond = isSendRateFloorRaised ? RaisedSendRateMinimumKilobytesPerSecond : FacepunchSockets.UnsetSendSetting;
 
-            yield return StartServerAndRemoteClient(out UnityCoreManager serverCoreManager, out UnityCoreManager clientCoreManager, out UnityTransportManager _, sendRateMinimumBytesPerSecond);
+            yield return StartServerAndRemoteClient(out UnityCoreManager serverCoreManager, out UnityCoreManager clientCoreManager, out UnityTransportManager _, sendRateMinimumKilobytesPerSecond);
             Assert.IsTrue(TryGetRemoteClientConnection(serverCoreManager, out Connection remoteClientConnection), "The server holds no remote client.");
 
             FacepunchSockets serverFacepunchSockets = (FacepunchSockets)serverCoreManager.GetComponent<UnityTransportManager>().Transports[0];
@@ -514,7 +514,7 @@ namespace Nucleus.Integrations.Facepunch.Tests
             FacepunchSockets serverFacepunchSockets = (FacepunchSockets)serverCoreManager.GetComponent<UnityTransportManager>().Transports[0];
 
             UnityCoreManager secondClientCoreManager = NewPeer("SteamSecondClient", out UnityTransportManager secondClientTransportManager, out FacepunchTransport secondClientFacepunchTransport);
-            secondClientFacepunchTransport.ServerAddress = $"127.0.0.1:{serverFacepunchSockets.Configuration.Port}";
+            secondClientFacepunchTransport.RemoteAddress = $"127.0.0.1:{serverFacepunchSockets.Configuration.Port}";
 
             yield return WaitForTask(secondClientTransportManager.EnsureAddedAsync());
 
@@ -701,22 +701,22 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// <param name="serverCoreManager">The server peer.</param>
         /// <param name="clientCoreManager">The client peer.</param>
         /// <param name="clientTransportManager">The client peer's transport manager.</param>
-        /// <param name="sendRateMinimumBytesPerSecond">The send rate floor the server gives its connections, or <see cref="FacepunchSockets.UnsetSendSetting"/> for Steam's.</param>
+        /// <param name="sendRateMinimumKilobytesPerSecond">The send rate floor the server gives its connections, or <see cref="FacepunchSockets.UnsetSendSetting"/> for Steam's.</param>
         /// <param name="isShareSteamIdsEnabled">Whether the server shares SteamIDs with its clients.</param>
         /// <param name="isPerConnectionReceiveEnabled">Whether the server receives each client through its own call.</param>
         /// <param name="bindAddress">The address the server listens on.</param>
         /// <param name="clientHost">The host the client dials, with the port added, an IPv6 one written in brackets.</param>
         /// <returns>The coroutine driving the start.</returns>
-        private IEnumerator StartServerAndRemoteClient(out UnityCoreManager serverCoreManager, out UnityCoreManager clientCoreManager, out UnityTransportManager clientTransportManager, uint sendRateMinimumBytesPerSecond = FacepunchSockets.UnsetSendSetting, bool isShareSteamIdsEnabled = false, bool isPerConnectionReceiveEnabled = false, string bindAddress = "localhost", string clientHost = "127.0.0.1")
+        private IEnumerator StartServerAndRemoteClient(out UnityCoreManager serverCoreManager, out UnityCoreManager clientCoreManager, out UnityTransportManager clientTransportManager, uint sendRateMinimumKilobytesPerSecond = FacepunchSockets.UnsetSendSetting, bool isShareSteamIdsEnabled = false, bool isPerConnectionReceiveEnabled = false, string bindAddress = "localhost", string clientHost = "127.0.0.1")
         {
             ushort port = ProbeFreeUdpPort();
 
             serverCoreManager = NewPeer("SteamServer", out UnityTransportManager serverTransportManager, out FacepunchTransport serverFacepunchTransport);
             serverFacepunchTransport.BindAddress = bindAddress;
             clientCoreManager = NewPeer("SteamClient", out clientTransportManager, out FacepunchTransport clientFacepunchTransport);
-            clientFacepunchTransport.ServerAddress = $"{clientHost}:{port}";
+            clientFacepunchTransport.RemoteAddress = $"{clientHost}:{port}";
 
-            return StartServerAndRemoteClient(serverCoreManager, serverTransportManager, clientCoreManager, clientTransportManager, port, sendRateMinimumBytesPerSecond, isShareSteamIdsEnabled, isPerConnectionReceiveEnabled);
+            return StartServerAndRemoteClient(serverCoreManager, serverTransportManager, clientCoreManager, clientTransportManager, port, sendRateMinimumKilobytesPerSecond, isShareSteamIdsEnabled, isPerConnectionReceiveEnabled);
         }
 
         /// <summary>
@@ -727,19 +727,19 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// <param name="clientCoreManager">The client peer.</param>
         /// <param name="clientTransportManager">The client peer's transport manager.</param>
         /// <param name="port">The loopback port the server listens on.</param>
-        /// <param name="sendRateMinimumBytesPerSecond">The send rate floor the server gives its connections, or <see cref="FacepunchSockets.UnsetSendSetting"/> for Steam's.</param>
+        /// <param name="sendRateMinimumKilobytesPerSecond">The send rate floor the server gives its connections, or <see cref="FacepunchSockets.UnsetSendSetting"/> for Steam's.</param>
         /// <param name="isShareSteamIdsEnabled">Whether the server shares SteamIDs with its clients.</param>
         /// <param name="isPerConnectionReceiveEnabled">Whether the server receives each client through its own call.</param>
         /// <returns>The coroutine driving the start.</returns>
         /// <remarks>The component carries no addressing setter, so the engine transport each start builds is switched to IP addressing before it starts.</remarks>
-        private static IEnumerator StartServerAndRemoteClient(UnityCoreManager serverCoreManager, UnityTransportManager serverTransportManager, UnityCoreManager clientCoreManager, UnityTransportManager clientTransportManager, ushort port, uint sendRateMinimumBytesPerSecond, bool isShareSteamIdsEnabled, bool isPerConnectionReceiveEnabled)
+        private static IEnumerator StartServerAndRemoteClient(UnityCoreManager serverCoreManager, UnityTransportManager serverTransportManager, UnityCoreManager clientCoreManager, UnityTransportManager clientTransportManager, ushort port, uint sendRateMinimumKilobytesPerSecond, bool isShareSteamIdsEnabled, bool isPerConnectionReceiveEnabled)
         {
             yield return WaitForTask(serverTransportManager.EnsureAddedAsync());
 
             FacepunchSockets serverFacepunchSockets = (FacepunchSockets)serverTransportManager.Transports[0];
             serverFacepunchSockets.Addressing = FacepunchAddressing.IpAddress;
             serverFacepunchSockets.SetPort(port);
-            serverFacepunchSockets.SendRateMinimumBytesPerSecond = sendRateMinimumBytesPerSecond;
+            serverFacepunchSockets.SendRateMinimumKilobytesPerSecond = sendRateMinimumKilobytesPerSecond;
             serverFacepunchSockets.ShareSteamIdsEnabled = isShareSteamIdsEnabled;
             serverFacepunchSockets.PerConnectionReceiveEnabled = isPerConnectionReceiveEnabled;
 

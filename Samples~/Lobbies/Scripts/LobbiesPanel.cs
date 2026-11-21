@@ -18,7 +18,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.Lobbies
     /// </summary>
     /// <remarks>
     /// The lobby only finds the host; the session itself runs over <see cref="FacepunchTransport"/>, whose
-    /// <see cref="FacepunchTransport.ServerSteamId"/> a member sets to the lobby's game server before starting its client. The host
+    /// <see cref="FacepunchTransport.RemoteSteamId"/> a member sets to the lobby's game server before starting its client. The host
     /// starts its server, creates the lobby, then names itself the lobby's game server, so no member can dial a server that is not yet
     /// listening. When the host leaves, Steam hands the lobby to another member, but the server went with the host, so each member leaves
     /// the lobby once its client stops, and a player who enters later sees that the game server is no longer the owner.
@@ -439,7 +439,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.Lobbies
                 return;
 
             _hasStartedClient = true;
-            _facepunchTransport.ServerSteamId = serverSteamId.Value;
+            _facepunchTransport.RemoteSteamId = serverSteamId.Value;
             _statusText = $"Connecting to the host [{serverSteamId.Value}].";
 
             await _unityTransportManager.StartClientAsync();

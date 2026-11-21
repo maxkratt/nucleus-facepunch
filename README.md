@@ -5,7 +5,7 @@ A Steam Networking Sockets transport for the Nucleus netcode engine, built on [F
 ## Requirements
 
 - Unity 6.5 (6000.5) or later, building for Windows, Linux or macOS.
-- Nucleus 0.5.0 or later, in `Assets/Nucleus`.
+- Nucleus 0.6.0 or later, in `Assets/Nucleus`.
 - Steam running and logged in. App ID 480 (Spacewar) works for testing: put `steam_appid.txt` holding `480` in the project folder, and beside the executable in a build.
 
 Facepunch.Steamworks 2.5.2 and Steam's native libraries are included in the package, under `Runtime/Plugins/Facepunch.Steamworks` with Facepunch's licence. **A project that already holds Facepunch.Steamworks must delete its own copy**, or the duplicate assemblies fail the compile.
@@ -24,13 +24,13 @@ Facepunch.Steamworks 2.5.2 and Steam's native libraries are included in the pack
 1. Put `FacepunchTransport` on the `UnityCoreManager` GameObject. `UnityTransportManager` uses it in place of the default transport.
 2. Initialize Steam in your game: `SteamClient.Init(appId, false)` before the first start and `SteamClient.RunCallbacks()` every frame (or `SteamClient.Init(appId)` to let Facepunch pump on its own thread). The transport never does this itself. The Shared sample's `SteamBootstrap` does it for you.
 3. The host calls `StartHostAsync()`.
-4. A client sets `FacepunchTransport.ServerSteamId` to the host's SteamID64 and calls `StartClientAsync()`.
+4. A client sets `FacepunchTransport.RemoteSteamId` to the host's SteamID64 and calls `StartClientAsync()`.
 
 | Shape | Addressing | Steam the game initializes | The client sets |
 |---|---|---|---|
-| Player hosts, friends join | Steam ID (default) | `SteamClient` | `ServerSteamId` |
-| Dedicated server behind Valve's relay | Fake IP | `SteamServer` on the server | `ServerAddress` (the server's fake address) |
-| Public port, or two processes on one account | IP Address | `SteamServer`, or `SteamClient` for local tests | `ServerAddress` (`ip:port` or `[ipv6]:port`) |
+| Player hosts, friends join | Steam ID (default) | `SteamClient` | `RemoteSteamId` |
+| Dedicated server behind Valve's relay | Fake IP | `SteamServer` on the server | `RemoteAddress` (the server's fake address) |
+| Public port, or two processes on one account | IP Address | `SteamServer`, or `SteamClient` for local tests | `RemoteAddress` (`ip:port` or `[ipv6]:port`) |
 
 A dedicated server runs on `SteamServer.Init(appId, init, false)`, `SteamServer.LogOnAnonymous()` and `SteamServer.RunCallbacks()` every frame, with no Steam client on the machine. A client always uses the user's Steam. A process that wants both must call `SteamClient.Init` first: the other order throws `VersionMismatch`. Steam ID addressing between two machines needs two Steam accounts; one account across two processes needs IP Address.
 
@@ -54,7 +54,7 @@ Shut Steam down only when the game quits, after `UnityTransportManager.ShutdownA
 
 ## FacepunchTransport
 
-The Unity component. Its settings are copied into the engine transport, `FacepunchSockets`, when the transport manager adds it, so changes made while playing are discarded. `ServerSteamId`, `ServerAddress` and `BindAddress` are also script properties that write through at any time and apply at the next start. The status box at the top says whether Steam is initialized, and while a server runs it shows its SteamID, fake address or port with a Copy button.
+The Unity component. Its settings are copied into the engine transport, `FacepunchSockets`, when the transport manager adds it, so changes made while playing are discarded. `RemoteSteamId`, `RemoteAddress`, `BindAddress` and `ConnectingClientFilter` are also script properties that write through at any time and apply at the next start. `Addressing` reads the inspector's choice, and `FacepunchSockets` is the engine transport once added. The status box at the top says whether Steam is initialized, and while a server runs it shows its SteamID, fake address or port with a Copy button.
 
 ### Connection
 
@@ -90,11 +90,12 @@ Collapsed by default, with a summary of its values. Everything but Per-Connectio
 
 ### From code
 
-These live on `FacepunchSockets`, which `AddToAsync` returns and `TransportManager` holds:
+These live on `FacepunchSockets`, which `FacepunchTransport.FacepunchSockets` and `TransportManager` hold:
 
 - `ConnectingClientFilter`, a `bool (ulong steamId)` called on the network loop thread before the engine sees a client. Return `false` to refuse it, for a ban list or lobby members only.
+- `ServerSteamId`, the SteamID of the server this peer runs, which clients set as their `RemoteSteamId`; `UnsetSteamId` (0) while it is not listening.
 - `ServerFakeAddress`, the address Steam grants a Fake IP server once it is ready. A game server's grant can come after its logon, seconds after the start; a slow grant is logged as a warning and applied when it arrives.
-- `TryGetLinkStatus(connection, out SteamLinkStatus)`, Steam's ping, connection quality and pending bytes for one link. Facepunch allocates 96 to 192 bytes on each read, so poll it a few times a second, not every frame.
+- `TryGetLinkStatus(connection, out SteamLinkStatus)`, Steam's ping, connection quality and pending bytes for one link, as read-only properties. Facepunch allocates 96 to 192 bytes on each read, so poll it a few times a second, not every frame.
 - `SetNetworkConditions` simulates latency and loss through Steam's own settings, mid-session too. They are process wide, and the host's own client is never delayed: judge lag from a separate client.
 - `RefusedReliableSendCount`, `RefusedUnreliableSendCount`, `LargestReliablePacketBytes`, `LargestUnreliablePacketBytes` and `ServerReceiveMicroseconds`, for diagnostics.
 
@@ -105,8 +106,8 @@ Read only when the game calls `ApplyCommandLineArguments()` on the transport.
 | Flag | Sets |
 |---|---|
 | `-port <n>` | Port and virtual port |
-| `-address <ip:port>` | `ServerAddress` |
-| `-steamid <id>` | `ServerSteamId` |
+| `-address <ip:port>` | `RemoteAddress` |
+| `-steamid <id>` | `RemoteSteamId` |
 
 Steam's own `+connect_lobby <id>` names a lobby, not a host; the Lobbies sample reads it.
 

@@ -18,7 +18,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
     /// The ping is estimated without sending anything to the host: Steam's relay network measures each peer's ping to its relays, the
     /// host publishes that as a ping location string in its lobby data, and <see cref="SteamNetworkingUtils.EstimatePingTo"/> combines
     /// it with this peer's own. Both sides need relay network access, which <see cref="SteamBootstrap"/> starts. A joined player
-    /// connects to the lobby's game server through <see cref="FacepunchTransport.ServerSteamId"/>, and leaves the lobby once its client
+    /// connects to the lobby's game server through <see cref="FacepunchTransport.RemoteSteamId"/>, and leaves the lobby once its client
     /// stops.
     /// </remarks>
     [DisallowMultipleComponent]
@@ -379,7 +379,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
                 return;
 
             _hasStartedClient = true;
-            _facepunchTransport.ServerSteamId = serverSteamId.Value;
+            _facepunchTransport.RemoteSteamId = serverSteamId.Value;
             _statusText = $"Connecting to the host [{serverSteamId.Value}].";
 
             await _unityTransportManager.StartClientAsync();

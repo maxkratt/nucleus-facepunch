@@ -1,5 +1,15 @@
 # Changelog
 
+## Nucleus Facepunch.Steamworks 0.3.0
+Requires Nucleus 0.6.0 or later.
+- Members renamed to match Nucleus Steamworks: `ServerSteamId` is now `RemoteSteamId` and `ServerAddress` is now `RemoteAddress`, on `FacepunchTransport` and `FacepunchSockets`. `FacepunchSockets.RemoteAddress` defaults to an empty string.
+- Send rates are set in kilobytes (1,024 bytes) per second: `SendRateMinimumKilobytesPerSecond` (default 256) and `SendRateMaximumKilobytesPerSecond` (default 4096) replace the `BytesPerSecond` members on `FacepunchSockets` and the component.
+- Scenes saved with an earlier version lose the component's server SteamID, server address and send rates, which have to be set again.
+- New `FacepunchSockets.ServerSteamId`, read only: the SteamID of the server this peer runs, or `UnsetSteamId` while it is not listening. The inspector's server row shows it.
+- `FacepunchTransport` gains `Addressing` (read only), `FacepunchSockets` (the engine transport once added) and `ConnectingClientFilter`, which writes through to the transport like `RemoteSteamId`.
+- `FacepunchSockets.Addressing` is now a property, and `SteamLinkStatus` has read-only properties in place of its fields, under the same names.
+- Samples: updated for the renames.
+
 ## Nucleus Facepunch.Steamworks 0.2.1
 - Samples: the panels compile against Nucleus versions without `LocalConnectionState.Error` and `TimedOut`. A failed or timed-out connection ends in `Disconnected`, which the panels already handle.
 

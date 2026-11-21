@@ -1,6 +1,6 @@
 ---
 name: nucleus-facepunch
-description: Covers the Nucleus Steam transport built on Facepunch.Steamworks (Steam Networking Sockets) for games on Steam. Explains FacepunchSockets and the Unity FacepunchTransport component, addressing (SteamId through Valve's relay, IpAddress dialled directly over IPv4 or IPv6, FakeIp for game servers), which Steam interface is used (SteamClient or SteamServer, whichever the game initialized), ServerSteamId and ServerAddress, who initializes, pumps and shuts down Steam, finding the host through a Steam lobby (SteamMatchmaking.CreateLobbyAsync, Lobby.SetGameServer, Lobby.GetGameServer, OnLobbyGameCreated, OnGameLobbyJoinRequested, +connect_lobby) and the Lobbies sample, SteamID identity, SteamTicketAuthenticator, ConnectingClientFilter, PerConnectionReceiveEnabled for IL2CPP servers, the minimum send rate of a SteamId server, slow leaves over SteamId, SetNetworkConditions on Steam, TryGetLinkStatus and SteamLinkStatus, send rate and send buffer settings, and testing on App ID 480. Load it when a project uses Facepunch.Steamworks for multiplayer, when code touches any of these names, when a Steam client cannot connect, or when someone asks how to join a friend, invite through Steam or run a Steam dedicated server with Nucleus.
+description: Covers the Nucleus Steam transport built on Facepunch.Steamworks (Steam Networking Sockets) for games on Steam. Explains FacepunchSockets and the Unity FacepunchTransport component, addressing (SteamId through Valve's relay, IpAddress dialled directly over IPv4 or IPv6, FakeIp for game servers), which Steam interface is used (SteamClient or SteamServer, whichever the game initialized), RemoteSteamId and RemoteAddress, ServerSteamId, who initializes, pumps and shuts down Steam, finding the host through a Steam lobby (SteamMatchmaking.CreateLobbyAsync, Lobby.SetGameServer, Lobby.GetGameServer, OnLobbyGameCreated, OnGameLobbyJoinRequested, +connect_lobby) and the Lobbies sample, SteamID identity, SteamTicketAuthenticator, ConnectingClientFilter, PerConnectionReceiveEnabled for IL2CPP servers, the minimum send rate of a SteamId server, slow leaves over SteamId, SetNetworkConditions on Steam, TryGetLinkStatus and SteamLinkStatus, send rate and send buffer settings, and testing on App ID 480. Load it when a project uses Facepunch.Steamworks for multiplayer, when code touches any of these names, when a Steam client cannot connect, or when someone asks how to join a friend, invite through Steam or run a Steam dedicated server with Nucleus.
 ---
 
 # Nucleus over Steam with Facepunch.Steamworks
@@ -21,12 +21,12 @@ Confirm any API against the source in the package (`Packages/com.maxkratt.nucleu
 
 | Shape | `Addressing` | Steam the game initializes | The client sets |
 |---|---|---|---|
-| Player hosts, friends join | `SteamId` (default) | `SteamClient` | `ServerSteamId` = the host's SteamID64 |
-| Dedicated server, IP hidden behind Valve's relay | `FakeIp` | `SteamServer` on the server | `ServerAddress` = the server's `ServerFakeAddress` |
-| Dedicated server on a public port, or two processes on one Steam account | `IpAddress` | `SteamServer` (or `SteamClient` for local tests) | `ServerAddress` = `"ip:port"` or `"[ipv6]:port"` |
+| Player hosts, friends join | `SteamId` (default) | `SteamClient` | `RemoteSteamId` = the host's SteamID64 |
+| Dedicated server, IP hidden behind Valve's relay | `FakeIp` | `SteamServer` on the server | `RemoteAddress` = the server's `ServerFakeAddress` |
+| Dedicated server on a public port, or two processes on one Steam account | `IpAddress` | `SteamServer` (or `SteamClient` for local tests) | `RemoteAddress` = `"ip:port"` or `"[ipv6]:port"` |
 
 - There is no Game Server toggle: the transport uses `SteamClient` when it is valid, else `SteamServer`. A process wanting both must `SteamClient.Init` first; the other order throws `VersionMismatch`.
-- A host calls `StartHostAsync()`; its own client pairs in process whatever `ServerSteamId` holds. A pure client sets `ServerSteamId` or `ServerAddress` on the component (both write through and apply at the next start), then calls `StartClientAsync()`.
+- A host calls `StartHostAsync()`; its own client pairs in process whatever `RemoteSteamId` holds. A pure client sets `RemoteSteamId` or `RemoteAddress` on the component (both write through and apply at the next start), then calls `StartClientAsync()`.
 - A dedicated server needs `SteamServer.Init(appId, init, false)` (with a mod directory and description set), `SteamServer.LogOnAnonymous()` and `SteamServer.RunCallbacks()` every frame. Facepunch has no logon by login token, so its SteamID changes every run; advertise it in the server list or a fake address, never a stored SteamID.
 - `SteamId` between two machines needs two Steam accounts. One account across two processes needs `IpAddress`.
 - `SteamId` links are not relay only: Facepunch exposes no setting for it, so players may connect directly and learn each other's IP addresses. Use `FakeIp` behind a game server where that matters.
@@ -37,7 +37,7 @@ Nucleus ships no lobby code; the lobby only tells a joiner which SteamID to dial
 
 1. The host calls `StartHostAsync()`, then `SteamMatchmaking.CreateLobbyAsync(maxMembers)`, then sets the lobby type (`SetFriendsOnly`, `SetPublic`), since Facepunch creates every lobby invisible, and calls `lobby.SetGameServer(SteamClient.SteamId)`, so nobody dials a server that is not listening yet.
 2. A joiner enters the lobby: from an invite or the friends list while the game runs (`SteamFriends.OnGameLobbyJoinRequested`, then `lobby.Join()`), or from `+connect_lobby <id>` when Steam launched the game to accept an invite (read it from `Environment.GetCommandLineArgs()`; it is Steam's flag, not a Nucleus one).
-3. When entered (`SteamMatchmaking.OnLobbyEntered`, or the `Join()` result), the joiner skips the rest when `lobby.Owner.IsMe` (the creator gets the event too), then reads `lobby.GetGameServer(ref ip, ref port, ref serverSteamId)`. If none is set it waits for `SteamMatchmaking.OnLobbyGameCreated`. If the game server differs from the owner, the host has left. Otherwise it sets `ServerSteamId` to the game server and calls `StartClientAsync()`.
+3. When entered (`SteamMatchmaking.OnLobbyEntered`, or the `Join()` result), the joiner skips the rest when `lobby.Owner.IsMe` (the creator gets the event too), then reads `lobby.GetGameServer(ref ip, ref port, ref serverSteamId)`. If none is set it waits for `SteamMatchmaking.OnLobbyGameCreated`. If the game server differs from the owner, the host has left. Otherwise it sets `RemoteSteamId` to the game server and calls `StartClientAsync()`.
 4. On leaving, call `lobby.Leave()` and `ShutdownAll()`. Unsubscribe Facepunch's static events in `OnDestroy`.
 
 The Lobbies sample (`LobbiesPanel`) shows the whole flow, including joining by typed lobby ID. The Lobby Browser sample searches with `SteamMatchmaking.LobbyList` and estimates ping from a published `NetPingLocation`.
@@ -47,13 +47,13 @@ The Lobbies sample (`LobbiesPanel`) shows the whole flow, including joining by t
 - On every addressing, `Connection.RemoteAddress` on the server is the client's Steam-authenticated SteamID64, so the default authenticator already sets `Identity` to it. Do not parse it: call `FacepunchSockets.TryGetSteamId(connection or connectionId, out ulong steamId)`, or `TryGetConnection(steamId, out connection)` for the reverse. Get the `FacepunchSockets` from `connection.Transport`.
 - A server knows every client's SteamID and a client knows its own. For a client to know the others, tick Share Steam IDs on the server (`ShareSteamIdsEnabled`, off by default, since a SteamID links to a public profile). The IDs arrive after the client joins, so read `TryGetSteamId` where needed and subscribe to `SteamIdChanged` (`uint connectionId, ulong steamId`, `UnsetSteamId` when the client left). Never let a client report its own SteamID.
 - To also have Steam confirm the player owns the game and is not banned, tick Ticket Authentication on server and clients (`SteamTicketAuthenticator`). If only the server has it on, the client is dropped after `ServerManager.AuthenticationTimeoutSeconds` (30 s by default); if only the client has it on, it joins unchecked.
-- To refuse by SteamID before the engine sees the client, set `FacepunchSockets.ConnectingClientFilter`, a `bool (ulong steamId)` called on the network loop thread.
+- To refuse by SteamID before the engine sees the client, set `ConnectingClientFilter` on the component or on `FacepunchSockets`, a `bool (ulong steamId)` called on the network loop thread.
 - Maximum Connections (at least 1 in the inspector) refuses at accept once the server is full. A host's own client takes one place.
 
 ## Behaviour worth knowing
 
 - **IL2CPP servers:** turn on Per-Connection Receive (`PerConnectionReceiveEnabled`). Facepunch's `SocketManager.Receive` allocates 232 bytes per message under IL2CPP; receiving each client through its own call avoids it. No difference on Mono.
-- **SteamId servers send at the minimum send rate**, 256 KiB/s by default, not the maximum. Large messages and bursts to clients are slow there (50 MiB took 206 s). Raise Minimum Send Rate (`SendRateMinimumBytesPerSecond`) within the host's upload across all clients.
+- **SteamId servers send at the minimum send rate**, 256 KiB/s by default, not the maximum. Large messages and bursts to clients are slow there (50 MiB took 206 s). Raise Minimum Send Rate (`SendRateMinimumKilobytesPerSecond`) within the host's upload across all clients.
 - **A leave over SteamId reaches the server 3 to 8 seconds late**, against milliseconds over `IpAddress`. Send a game message before leaving if the server must react at once.
 - Every send setting and timeout is process wide (Facepunch has no per-connection options), applied at each start.
 - Each message carries its channel in a one byte header, so `DatagramOverheadBytes` is 1.

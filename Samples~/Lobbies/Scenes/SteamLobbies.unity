@@ -408,8 +408,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Nucleus.Integrations.Facepunch::Nucleus.Integrations.Facepunch.FacepunchTransport
   _addressing: 0
-  _serverSteamId: 0
-  _serverAddress: 
+  _remoteSteamId: 0
+  _remoteAddress: 
   _port: 27015
   _bindAddress: 
   _connectingTimeoutSeconds: 10
@@ -417,8 +417,8 @@ MonoBehaviour:
   _maximumConnections: 250
   _maximumClientPacketBytes: 8388608
   _perConnectionReceiveEnabled: 0
-  _sendRateMinimumBytesPerSecond: 262144
-  _sendRateMaximumBytesPerSecond: 4194304
+  _sendRateMinimumKilobytesPerSecond: 256
+  _sendRateMaximumKilobytesPerSecond: 4096
   _sendBufferSizeBytes: 2097152
   _ticketAuthenticationEnabled: 0
 --- !u!114 &1315130352

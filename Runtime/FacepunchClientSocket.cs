@@ -345,9 +345,9 @@ namespace Nucleus.Integrations.Facepunch
         private bool IsTargetingSelf()
         {
             if (_facepunchSockets.Addressing is FacepunchAddressing.SteamId)
-                return _facepunchSockets.ServerSteamId is FacepunchSockets.UnsetSteamId || _facepunchSockets.ServerSteamId == FacepunchSockets.GetOwnSteamId();
+                return _facepunchSockets.RemoteSteamId is FacepunchSockets.UnsetSteamId || _facepunchSockets.RemoteSteamId == FacepunchSockets.GetOwnSteamId();
 
-            return string.IsNullOrWhiteSpace(_facepunchSockets.ServerAddress);
+            return string.IsNullOrWhiteSpace(_facepunchSockets.RemoteAddress);
         }
 
         /// <summary>
@@ -360,9 +360,9 @@ namespace Nucleus.Integrations.Facepunch
             try
             {
                 if (_facepunchSockets.Addressing is FacepunchAddressing.SteamId)
-                    return SteamNetworkingSockets.ConnectRelay(_facepunchSockets.ServerSteamId, _facepunchSockets.VirtualPort, this);
+                    return SteamNetworkingSockets.ConnectRelay(_facepunchSockets.RemoteSteamId, _facepunchSockets.VirtualPort, this);
 
-                string serverAddress = _facepunchSockets.ServerAddress;
+                string serverAddress = _facepunchSockets.RemoteAddress;
 
                 if (FacepunchSockets.TryParseIpAddress(serverAddress.Trim(), _facepunchSockets.Configuration.Port, out NetAddress netAddress, isPortForced: false))
                     return SteamNetworkingSockets.ConnectNormal(netAddress, this);
@@ -381,7 +381,7 @@ namespace Nucleus.Integrations.Facepunch
         /// Describes where the client is connecting, for a log.
         /// </summary>
         /// <returns>The target.</returns>
-        private string DescribeTarget() => _facepunchSockets.Addressing is FacepunchAddressing.SteamId ? $"SteamID {_facepunchSockets.ServerSteamId} on virtual port {_facepunchSockets.VirtualPort}" : $"{_facepunchSockets.Addressing} {_facepunchSockets.ServerAddress}";
+        private string DescribeTarget() => _facepunchSockets.Addressing is FacepunchAddressing.SteamId ? $"SteamID {_facepunchSockets.RemoteSteamId} on virtual port {_facepunchSockets.VirtualPort}" : $"{_facepunchSockets.Addressing} {_facepunchSockets.RemoteAddress}";
 
         /// <summary>
         /// Pairs the client with this peer's own running server.
@@ -393,7 +393,7 @@ namespace Nucleus.Integrations.Facepunch
         {
             if (!serverSocket.IsListening)
             {
-                Logger<FacepunchClientSocket>.LogError($"No server to join. Set [{nameof(FacepunchSockets)}.{nameof(FacepunchSockets.ServerSteamId)}] or [{nameof(FacepunchSockets)}.{nameof(FacepunchSockets.ServerAddress)}] to the server, or start this peer's server first.");
+                Logger<FacepunchClientSocket>.LogError($"No server to join. Set [{nameof(FacepunchSockets)}.{nameof(FacepunchSockets.RemoteSteamId)}] or [{nameof(FacepunchSockets)}.{nameof(FacepunchSockets.RemoteAddress)}] to the server, or start this peer's server first.");
 
                 return ConnectionStateChangeResult.UnspecifiedError;
             }

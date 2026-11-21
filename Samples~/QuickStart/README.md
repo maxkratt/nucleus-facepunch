@@ -22,5 +22,5 @@ The smallest Steam session: one peer hosts, a friend pastes the host's SteamID a
 ## What to look at
 
 - `NetworkManager` holds the whole setup: `UnityCoreManager`, `UnityTransportManager`, `FacepunchTransport` (Addressing: SteamID), `SteamBootstrap`, `NetworkPlayerSpawner` and `QuickStartPanel`.
-- `QuickStartPanel.Join` is all a join takes: set `FacepunchTransport.ServerSteamId`, then `StartClientAsync`.
+- `QuickStartPanel.Join` is all a join takes: set `FacepunchTransport.RemoteSteamId`, then `StartClientAsync`.
 - `PlayerMover` (in Shared) moves the capsule only on the peer that controls it; `NetworkTransform` replicates it to the rest. Walk off the ground and the capsule falls, then drops back in above the middle.

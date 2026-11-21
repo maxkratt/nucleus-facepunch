@@ -11,36 +11,36 @@ namespace Nucleus.Integrations.Facepunch
         /// <summary>
         /// Steam's current estimate of the round trip time, in milliseconds.
         /// </summary>
-        public readonly int PingMilliseconds;
+        public int PingMilliseconds { get; }
         /// <summary>
         /// The share of packets this side received intact, from 0 to 1, or a negative value while Steam has no measurement.
         /// </summary>
-        public readonly float LocalQuality;
+        public float LocalQuality { get; }
         /// <summary>
         /// The share of packets the other side received intact, from 0 to 1, or a negative value while Steam has no measurement.
         /// </summary>
-        public readonly float RemoteQuality;
+        public float RemoteQuality { get; }
         /// <summary>
         /// The bytes a second currently sent.
         /// </summary>
-        public readonly float OutBytesPerSecond;
+        public float OutBytesPerSecond { get; }
         /// <summary>
         /// The bytes a second currently received.
         /// </summary>
-        public readonly float InBytesPerSecond;
+        public float InBytesPerSecond { get; }
         /// <summary>
         /// The reliable bytes queued and not yet sent.
         /// </summary>
         /// <remarks>A figure that keeps growing means the link cannot keep up.</remarks>
-        public readonly uint PendingReliableBytes;
+        public uint PendingReliableBytes { get; }
         /// <summary>
         /// The unreliable bytes queued and not yet sent.
         /// </summary>
-        public readonly uint PendingUnreliableBytes;
+        public uint PendingUnreliableBytes { get; }
         /// <summary>
         /// The reliable bytes sent and not yet acknowledged.
         /// </summary>
-        public readonly uint SentUnacknowledgedReliableBytes;
+        public uint SentUnacknowledgedReliableBytes { get; }
 
         /// <summary>
         /// Creates a new instance from Steam's own status.

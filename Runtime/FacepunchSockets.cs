@@ -57,12 +57,12 @@ namespace Nucleus.Integrations.Facepunch
         /// How the server is reached, and so how a client dials it.
         /// </summary>
         /// <remarks>Read at the next start of either half. Both sides have to agree on it.</remarks>
-        public FacepunchAddressing Addressing;
+        public FacepunchAddressing Addressing { get; set; }
         /// <summary>
         /// The SteamID64 of the server a client connects to in <see cref="FacepunchAddressing.SteamId"/>.
         /// </summary>
         /// <remarks><see cref="UnsetSteamId"/>, or this peer's own SteamID, joins the server this same peer is running. Read at the next client start.</remarks>
-        public ulong ServerSteamId;
+        public ulong RemoteSteamId;
         /// <summary>
         /// The address and port a client connects to in <see cref="FacepunchAddressing.IpAddress"/> and <see cref="FacepunchAddressing.FakeIp"/>,
         /// such as <c>203.0.113.7:27015</c> or <c>[2001:db8::7]:27015</c>.
@@ -71,22 +71,22 @@ namespace Nucleus.Integrations.Facepunch
         /// <see langword="null"/> or empty joins the server this same peer is running. Without a port, <see cref="Configuration.Port"/> is
         /// used, and <c>localhost</c> is the IPv4 loopback; host names are not looked up. A fake IP is always IPv4. Read at the next client start.
         /// </remarks>
-        public string ServerAddress;
+        public string RemoteAddress = string.Empty;
         /// <summary>
         /// The Steam virtual port the server listens on and the client connects to in <see cref="FacepunchAddressing.SteamId"/>.
         /// </summary>
         /// <remarks><see cref="FacepunchAddressing.IpAddress"/> listens on <see cref="Configuration.Port"/> instead; <see cref="SetPort"/> sets both.</remarks>
         public int VirtualPort;
         /// <summary>
-        /// The send rate Steam never drops below on a connection, in bytes per second.
+        /// The send rate Steam never drops below on a connection, in kilobytes (1,024 bytes) per second.
         /// </summary>
         /// <remarks>Process-wide: Facepunch offers no per-connection options. <see cref="UnsetSendSetting"/> leaves Steam's current value. Applied at each start.</remarks>
-        public uint SendRateMinimumBytesPerSecond = UnsetSendSetting;
+        public uint SendRateMinimumKilobytesPerSecond = UnsetSendSetting;
         /// <summary>
-        /// The send rate Steam never rises above on a connection, in bytes per second.
+        /// The send rate Steam never rises above on a connection, in kilobytes (1,024 bytes) per second.
         /// </summary>
         /// <remarks>Process-wide: Facepunch offers no per-connection options. <see cref="UnsetSendSetting"/> leaves Steam's current value. Applied at each start.</remarks>
-        public uint SendRateMaximumBytesPerSecond = UnsetSendSetting;
+        public uint SendRateMaximumKilobytesPerSecond = UnsetSendSetting;
         /// <summary>
         /// The most bytes Steam holds queued on a connection before it refuses a send, in bytes.
         /// </summary>
@@ -146,7 +146,12 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         public string ServerFakeAddress { get; internal set; }
         /// <summary>
-        /// The value of <see cref="ServerSteamId"/> that means this peer's own server.
+        /// The SteamID64 of the server this peer is running, which a client in <see cref="FacepunchAddressing.SteamId"/> sets as its <see cref="RemoteSteamId"/>.
+        /// </summary>
+        /// <remarks><see cref="UnsetSteamId"/> while this peer's server is not listening, or Steam is down.</remarks>
+        public ulong ServerSteamId => ServerSocket is { IsListening: true } && !IsSteamShutDown() ? GetOwnSteamId() : UnsetSteamId;
+        /// <summary>
+        /// The value of <see cref="RemoteSteamId"/> that means this peer's own server.
         /// </summary>
         public const ulong UnsetSteamId = 0;
         /// <summary>
@@ -158,11 +163,11 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         public const uint UnsetMaximumClientPacketBytes = 0;
         /// <summary>
-        /// The launch-argument flag which sets <see cref="ServerAddress"/>.
+        /// The launch-argument flag which sets <see cref="RemoteAddress"/>.
         /// </summary>
         public const string AddressArgument = "address";
         /// <summary>
-        /// The launch-argument flag which sets <see cref="ServerSteamId"/>.
+        /// The launch-argument flag which sets <see cref="RemoteSteamId"/>.
         /// </summary>
         public const string SteamIdArgument = "steamid";
         /// <summary>
@@ -173,6 +178,10 @@ namespace Nucleus.Integrations.Facepunch
         /// The name read as the IPv4 loopback address wherever an address is accepted; no other host name is looked up.
         /// </summary>
         internal const string LocalhostText = "localhost";
+        /// <summary>
+        /// The bytes in one kilobyte, the unit the send rates are set in.
+        /// </summary>
+        internal const uint KilobyteBytes = 1024;
         /// <summary>
         /// The conditions Steam simulates, or <see langword="null"/> for none.
         /// </summary>
@@ -613,13 +622,13 @@ namespace Nucleus.Integrations.Facepunch
                 VirtualPort = port;
 
             if (commandLineArguments.TryGetValue(AddressArgument, out string address))
-                ServerAddress = address;
+                RemoteAddress = address;
 
             if (!commandLineArguments.TryGetValue(SteamIdArgument, out string steamIdText))
                 return;
 
             if (ulong.TryParse(steamIdText, out ulong steamId))
-                ServerSteamId = steamId;
+                RemoteSteamId = steamId;
             else
                 Logger<FacepunchSockets>.LogError($"The launch argument [{SteamIdArgument}] value [{steamIdText}] is not a SteamID.");
         }
@@ -656,15 +665,22 @@ namespace Nucleus.Integrations.Facepunch
             if (Configuration.ConnectedTimeoutSeconds > 0)
                 SteamNetworkingUtils.Timeout = Configuration.ConnectedTimeoutSeconds * 1000;
 
-            if (SendRateMinimumBytesPerSecond is not UnsetSendSetting)
-                SteamNetworkingUtils.SendRateMin = (int)SendRateMinimumBytesPerSecond;
+            if (SendRateMinimumKilobytesPerSecond is not UnsetSendSetting)
+                SteamNetworkingUtils.SendRateMin = GetBytesPerSecond(SendRateMinimumKilobytesPerSecond);
 
-            if (SendRateMaximumBytesPerSecond is not UnsetSendSetting)
-                SteamNetworkingUtils.SendRateMax = (int)SendRateMaximumBytesPerSecond;
+            if (SendRateMaximumKilobytesPerSecond is not UnsetSendSetting)
+                SteamNetworkingUtils.SendRateMax = GetBytesPerSecond(SendRateMaximumKilobytesPerSecond);
 
             if (SendBufferSizeBytes is not UnsetSendSetting)
                 SteamNetworkingUtils.SendBufferSize = (int)SendBufferSizeBytes;
         }
+
+        /// <summary>
+        /// Converts a send rate to the bytes per second Steam takes.
+        /// </summary>
+        /// <param name="kilobytesPerSecond">The rate, in kilobytes (1,024 bytes) per second.</param>
+        /// <returns>The rate in bytes per second, capped at the largest Steam accepts.</returns>
+        private static int GetBytesPerSecond(uint kilobytesPerSecond) => (int)Math.Min(kilobytesPerSecond * (long)KilobyteBytes, int.MaxValue);
 
         /// <summary>
         /// Writes <see cref="_networkConditions"/> into Steam's simulation, if Steam is up.

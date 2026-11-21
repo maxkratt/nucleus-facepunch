@@ -12,7 +12,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.QuickStart
     /// friend, who pastes it and joins.
     /// </summary>
     /// <remarks>
-    /// Joining is one property and one call: <see cref="FacepunchTransport.ServerSteamId"/> names the host, and
+    /// Joining is one property and one call: <see cref="FacepunchTransport.RemoteSteamId"/> names the host, and
     /// <see cref="UnityTransportManager.StartClientAsync()"/> dials it through Steam. The transport must be set to
     /// <see cref="FacepunchAddressing.SteamId"/>.
     /// </remarks>
@@ -162,7 +162,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.QuickStart
                 return;
             }
 
-            _facepunchTransport.ServerSteamId = serverSteamId;
+            _facepunchTransport.RemoteSteamId = serverSteamId;
             _hasStarted = true;
             _hasConnected = false;
             _statusText = "Connecting.";

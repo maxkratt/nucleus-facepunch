@@ -17,7 +17,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.DedicatedServer
     /// </summary>
     /// <remarks>
     /// The transport must be on <see cref="FacepunchAddressing.FakeIp"/>, with ticket authentication on to match the server. A join
-    /// sets <see cref="FacepunchTransport.ServerAddress"/> to the fake address and starts the client, which Steam's relay carries to
+    /// sets <see cref="FacepunchTransport.RemoteAddress"/> to the fake address and starts the client, which Steam's relay carries to
     /// the server.
     /// </remarks>
     [DisallowMultipleComponent]
@@ -265,7 +265,7 @@ namespace Nucleus.Integrations.Facepunch.Samples.DedicatedServer
 
             CancelSearch();
 
-            _facepunchTransport.ServerAddress = serverAddress;
+            _facepunchTransport.RemoteAddress = serverAddress;
             _hasStarted = true;
             _statusText = $"Connecting to [{serverAddress}].";
 

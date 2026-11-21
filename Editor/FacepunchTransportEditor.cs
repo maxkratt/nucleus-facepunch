@@ -64,7 +64,7 @@ namespace Nucleus.Integrations.Facepunch.Editor
         /// </summary>
         private const int SteamDefaultTimeoutSeconds = 10;
         /// <summary>
-        /// The bytes in one kibibyte, the unit the send settings are entered in.
+        /// The bytes in one kibibyte, the unit the send buffer and the client packet limit are entered in, and the send rates are set in.
         /// </summary>
         private const uint KibibyteBytes = 1024U;
         /// <summary>
@@ -290,7 +290,7 @@ namespace Nucleus.Integrations.Facepunch.Editor
 
             using (new EditorGUI.IndentLevelScope())
             {
-                SerializedProperty targetSerializedProperty = serializedObject.FindProperty(addressing is FacepunchAddressing.SteamId ? "_serverSteamId" : "_serverAddress");
+                SerializedProperty targetSerializedProperty = serializedObject.FindProperty(addressing is FacepunchAddressing.SteamId ? "_remoteSteamId" : "_remoteAddress");
 
                 EditorGUILayout.PropertyField(targetSerializedProperty, new GUIContent(GetTargetLabel(addressing), targetSerializedProperty.tooltip));
 
@@ -335,12 +335,12 @@ namespace Nucleus.Integrations.Facepunch.Editor
         {
             SerializedProperty connectingTimeoutSecondsSerializedProperty = serializedObject.FindProperty("_connectingTimeoutSeconds");
             SerializedProperty idleTimeoutSecondsSerializedProperty = serializedObject.FindProperty("_idleTimeoutSeconds");
-            SerializedProperty sendRateMinimumSerializedProperty = serializedObject.FindProperty("_sendRateMinimumBytesPerSecond");
-            SerializedProperty sendRateMaximumSerializedProperty = serializedObject.FindProperty("_sendRateMaximumBytesPerSecond");
+            SerializedProperty sendRateMinimumSerializedProperty = serializedObject.FindProperty("_sendRateMinimumKilobytesPerSecond");
+            SerializedProperty sendRateMaximumSerializedProperty = serializedObject.FindProperty("_sendRateMaximumKilobytesPerSecond");
             SerializedProperty sendBufferSizeSerializedProperty = serializedObject.FindProperty("_sendBufferSizeBytes");
             SerializedProperty perConnectionReceiveEnabledSerializedProperty = serializedObject.FindProperty("_perConnectionReceiveEnabled");
             string receiveSummary = perConnectionReceiveEnabledSerializedProperty.boolValue ? "Per-connection · " : string.Empty;
-            string advancedSummary = $"{receiveSummary}{FormatSeconds(connectingTimeoutSecondsSerializedProperty.intValue)} / {FormatSeconds(idleTimeoutSecondsSerializedProperty.intValue)} · {FormatBytes(sendRateMinimumSerializedProperty.uintValue, SteamDefaultSendRateBytes)} to {FormatBytes(sendRateMaximumSerializedProperty.uintValue, SteamDefaultSendRateBytes)}/s · {FormatBytes(sendBufferSizeSerializedProperty.uintValue, SteamDefaultSendBufferBytes)} buffer";
+            string advancedSummary = $"{receiveSummary}{FormatSeconds(connectingTimeoutSecondsSerializedProperty.intValue)} / {FormatSeconds(idleTimeoutSecondsSerializedProperty.intValue)} · {FormatBytes((ulong)sendRateMinimumSerializedProperty.uintValue * KibibyteBytes, SteamDefaultSendRateBytes)} to {FormatBytes((ulong)sendRateMaximumSerializedProperty.uintValue * KibibyteBytes, SteamDefaultSendRateBytes)}/s · {FormatBytes(sendBufferSizeSerializedProperty.uintValue, SteamDefaultSendBufferBytes)} buffer";
 
             EditorGUILayout.Space(GroupSpacing);
 
@@ -352,17 +352,17 @@ namespace Nucleus.Integrations.Facepunch.Editor
                 EditorGUILayout.PropertyField(perConnectionReceiveEnabledSerializedProperty, new GUIContent("Per-Connection Receive", perConnectionReceiveEnabledSerializedProperty.tooltip));
                 DrawPropertyFieldWithUnit(connectingTimeoutSecondsSerializedProperty, "Connecting Timeout", "s");
                 DrawPropertyFieldWithUnit(idleTimeoutSecondsSerializedProperty, "Idle Timeout", "s");
-                DrawKibibyteField(sendRateMinimumSerializedProperty, "Minimum Send Rate", "KiB/s");
-                DrawKibibyteField(sendRateMaximumSerializedProperty, "Maximum Send Rate", "KiB/s");
+                DrawPropertyFieldWithUnit(sendRateMinimumSerializedProperty, "Minimum Send Rate", "KiB/s");
+                DrawPropertyFieldWithUnit(sendRateMaximumSerializedProperty, "Maximum Send Rate", "KiB/s");
                 DrawKibibyteField(sendBufferSizeSerializedProperty, "Send Buffer Size", "KiB");
             }
 
             EditorGUILayout.HelpBox("Timeouts and send settings apply to every Steam connection in this process, because Facepunch has no per-connection options.", MessageType.None);
 
-            uint sendRateMinimumBytes = sendRateMinimumSerializedProperty.uintValue;
-            uint sendRateMaximumBytes = sendRateMaximumSerializedProperty.uintValue;
+            uint sendRateMinimumKilobytes = sendRateMinimumSerializedProperty.uintValue;
+            uint sendRateMaximumKilobytes = sendRateMaximumSerializedProperty.uintValue;
 
-            if (sendRateMinimumBytes is not UnsetSendSetting && sendRateMaximumBytes is not UnsetSendSetting && sendRateMinimumBytes > sendRateMaximumBytes)
+            if (sendRateMinimumKilobytes is not UnsetSendSetting && sendRateMaximumKilobytes is not UnsetSendSetting && sendRateMinimumKilobytes > sendRateMaximumKilobytes)
                 EditorGUILayout.HelpBox("The minimum send rate is above the maximum. Lower it, or raise the maximum to match.", MessageType.Warning);
 
             uint sendBufferSizeBytes = sendBufferSizeSerializedProperty.uintValue;
@@ -399,7 +399,7 @@ namespace Nucleus.Integrations.Facepunch.Editor
                     break;
                 default:
                     _serverRowLabel = "Server's SteamID";
-                    _serverRowText = FacepunchSockets.GetOwnSteamId().ToString();
+                    _serverRowText = facepunchSockets.ServerSteamId.ToString();
                     _serverRowCopyText = _serverRowText;
 
                     break;
@@ -533,15 +533,15 @@ namespace Nucleus.Integrations.Facepunch.Editor
         /// <param name="bytes">The count, or <see cref="UnsetSendSetting"/> for Steam's default.</param>
         /// <param name="steamDefaultBytes">The count Steam uses by default.</param>
         /// <returns>The count, such as "4 MiB" or "300 KiB".</returns>
-        private static string FormatBytes(uint bytes, uint steamDefaultBytes)
+        private static string FormatBytes(ulong bytes, uint steamDefaultBytes)
         {
             if (bytes is UnsetSendSetting)
                 bytes = steamDefaultBytes;
 
-            if (bytes >= 1024U * 1024U && bytes % (1024U * 1024U) == 0U)
-                return $"{bytes / (1024U * 1024U)} MiB";
+            if (bytes >= 1024UL * 1024UL && bytes % (1024UL * 1024UL) == 0UL)
+                return $"{bytes / (1024UL * 1024UL)} MiB";
 
-            return bytes >= 1024U ? $"{bytes / 1024U} KiB" : $"{bytes} B";
+            return bytes >= 1024UL ? $"{bytes / 1024UL} KiB" : $"{bytes} B";
         }
 
         /// <summary>
