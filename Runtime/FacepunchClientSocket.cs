@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 using CodeBoost.Logging;
 using Nucleus.Connections;
@@ -28,9 +29,22 @@ namespace Nucleus.Integrations.Facepunch
         /// <inheritdoc/>
         public override bool IsEmulated { get; protected set; } = false;
         /// <summary>
+        /// Whether the last connect was closed by the far end before it opened, rather than timing out or failing on this peer.
+        /// </summary>
+        /// <remarks>Set by a connect and kept after it fails, so whoever asked can tell a server that refused from one that never answered.</remarks>
+        internal bool IsLastConnectRefused { get; private set; }
+        /// <summary>
         /// The transport this socket belongs to, which holds the settings it reads.
         /// </summary>
         private FacepunchSockets _facepunchSockets;
+        /// <summary>
+        /// Cancels the wait on <see cref="FacepunchSockets.ConnectTimeoutMilliseconds"/> once the connect has ended, or <see langword="null"/> while none is running.
+        /// </summary>
+        private CancellationTokenSource _connectTimeoutCancellationTokenSource;
+        /// <summary>
+        /// Counts this socket's connects, so an expiry that belongs to an earlier one is recognised and ignored.
+        /// </summary>
+        private uint _connectNumber;
         /// <summary>
         /// The client's link to a server, or <see langword="null"/> when the client is not linked over Steam.
         /// </summary>
@@ -69,6 +83,10 @@ namespace Nucleus.Integrations.Facepunch
         /// Link changes Facepunch reported, applied by the next receive.
         /// </summary>
         private readonly ConcurrentQueue<FacepunchStatusChange> _statusChanges = new();
+        /// <summary>
+        /// The numbers of connects whose <see cref="FacepunchSockets.ConnectTimeoutMilliseconds"/> ran out, applied by the next receive.
+        /// </summary>
+        private readonly ConcurrentQueue<uint> _expiredConnectNumbers = new();
         /// <summary>
         /// The longest a dial is held for Steam's relay network status, in seconds.
         /// </summary>
@@ -109,9 +127,9 @@ namespace Nucleus.Integrations.Facepunch
                     continue;
 
                 isLinkRefused = true;
-                _facepunchSockets.RefusedReliableSendCount++;
 
                 Logger<FacepunchClientSocket>.LogError($"Steam refused a reliable message of [{refusedSend.MessageBytes}] bytes: [{refusedSend.Result}]. The link is closed, because the peers can no longer agree.");
+                _facepunchSockets.NotifySendFailed(Invoker.Client, _facepunchSockets.ServerSocket.Connection, Channel.Reliable, refusedSend.Result);
             }
 
             refusedSends.Clear();
@@ -218,7 +236,11 @@ namespace Nucleus.Integrations.Facepunch
                 return;
             }
 
-            _sendQueue.Send(_connectionManager.Connection, outgoingPacket, _facepunchSockets);
+            // Read before the send, which hands the packet back to the engine.
+            Channel channel = outgoingPacket.Channel;
+
+            if (!_sendQueue.TrySend(_connectionManager.Connection, outgoingPacket, out Result result))
+                _facepunchSockets.NotifySendFailed(Invoker.Client, _facepunchSockets.ServerSocket.Connection, channel, result);
         }
 
         /// <inheritdoc/>
@@ -229,6 +251,18 @@ namespace Nucleus.Integrations.Facepunch
             {
                 CloseSteamConnection();
                 FacepunchSockets.ChangeLocalState(TransportManager, Invoker.Client, LocalConnectionState.Disconnected, Connection);
+
+                return;
+            }
+
+            while (_expiredConnectNumbers.TryDequeue(out uint expiredConnectNumber))
+            {
+                // An expiry that lost the race with the connect opening, or belongs to an earlier connect, changes nothing.
+                if (expiredConnectNumber != _connectNumber || Connection.LocalState is not LocalConnectionState.Connecting)
+                    continue;
+
+                Logger<FacepunchClientSocket>.LogWarning($"Could not connect to [{DescribeTarget()}] within [{_facepunchSockets.ConnectTimeoutMilliseconds}] ms, so the client gave up.");
+                Stop();
 
                 return;
             }
@@ -267,7 +301,10 @@ namespace Nucleus.Integrations.Facepunch
 
             // A message proves the link is up even when Steam's Connected report has yet to be pumped; left Connecting, the client would drop the server's authentication.
             if (receivedPackets.Count > previousPacketCount && Connection.LocalState is LocalConnectionState.Connecting)
+            {
+                StopConnectTimeout();
                 FacepunchSockets.ChangeLocalState(TransportManager, Invoker.Client, LocalConnectionState.Connected, Connection);
+            }
         }
 
         /// <summary>
@@ -278,6 +315,8 @@ namespace Nucleus.Integrations.Facepunch
         {
             if (_isLoopback || _isDialHeld || _connectionManager is not null)
                 return ConnectionStateChangeResult.AlreadyInState;
+
+            IsLastConnectRefused = false;
 
             if (!_facepunchSockets.TryPrepareSteam())
                 return ConnectionStateChangeResult.UnspecifiedError;
@@ -304,6 +343,8 @@ namespace Nucleus.Integrations.Facepunch
 
             if (!FacepunchSockets.ChangeLocalState(TransportManager, Invoker.Client, LocalConnectionState.Connecting, Connection))
                 return ConnectionStateChangeResult.UnspecifiedError;
+
+            StartConnectTimeout();
 
             if (IsRelayStatusSettled(SteamNetworkingUtils.Status))
                 return Dial();
@@ -333,6 +374,7 @@ namespace Nucleus.Integrations.Facepunch
 
             Logger<FacepunchClientSocket>.LogError($"Steam refused to connect to [{DescribeTarget()}].");
 
+            StopConnectTimeout();
             FacepunchSockets.ChangeLocalState(TransportManager, Invoker.Client, LocalConnectionState.Disconnected, Connection);
 
             return ConnectionStateChangeResult.UnspecifiedError;
@@ -428,11 +470,18 @@ namespace Nucleus.Integrations.Facepunch
             switch (statusChange.State)
             {
                 case ConnectionState.Connected:
+                    StopConnectTimeout();
                     FacepunchSockets.ChangeLocalState(TransportManager, Invoker.Client, LocalConnectionState.Connected, Connection);
+
                     break;
                 case ConnectionState.ClosedByPeer:
                 case ConnectionState.ProblemDetectedLocally:
                     Logger<FacepunchClientSocket>.LogInformation($"The link to the server closed: [{statusChange.EndReason}].");
+
+                    // Steam reports a server that closed the link before it opened as closed by its peer, and one that never answered as a local problem.
+                    if (Connection.LocalState is LocalConnectionState.Connecting)
+                        IsLastConnectRefused = statusChange.State is ConnectionState.ClosedByPeer;
+
                     _isLinkDropDue = true;
 
                     break;
@@ -472,9 +521,66 @@ namespace Nucleus.Integrations.Facepunch
 
             _sendQueue.Discard(steamConnection);
             FacepunchMessages.DiscardSplitPacket(_splitPackets, steamConnection);
+            StopConnectTimeout();
 
             _connectionManager = null;
             _isLinkDropDue = false;
+        }
+
+        /// <summary>
+        /// Starts waiting on <see cref="FacepunchSockets.ConnectTimeoutMilliseconds"/> for the connect just begun, unless it is unset.
+        /// </summary>
+        /// <remarks>
+        /// The wait is a deadline on this side rather than Steam's connecting timeout, which is process wide and read by every link already
+        /// open, so it is awaited off the loop thread and its expiry queued for the next receive.
+        /// </remarks>
+        private void StartConnectTimeout()
+        {
+            StopConnectTimeout();
+
+            _connectNumber++;
+
+            uint connectTimeoutMilliseconds = _facepunchSockets.ConnectTimeoutMilliseconds;
+
+            if (connectTimeoutMilliseconds is FacepunchSockets.UnsetConnectTimeoutMilliseconds)
+                return;
+
+            _connectTimeoutCancellationTokenSource = new();
+            _ = ExpireConnectAsync(_connectNumber, (int)Math.Min(connectTimeoutMilliseconds, int.MaxValue), _connectTimeoutCancellationTokenSource.Token);
+        }
+
+        /// <summary>
+        /// Ends the wait on <see cref="FacepunchSockets.ConnectTimeoutMilliseconds"/>, if one is running.
+        /// </summary>
+        private void StopConnectTimeout()
+        {
+            if (_connectTimeoutCancellationTokenSource is null)
+                return;
+
+            _connectTimeoutCancellationTokenSource.Cancel();
+            _connectTimeoutCancellationTokenSource.Dispose();
+            _connectTimeoutCancellationTokenSource = null;
+        }
+
+        /// <summary>
+        /// Waits out a connect's budget and queues its expiry, unless the wait is cancelled first.
+        /// </summary>
+        /// <param name="connectNumber">The connect the budget belongs to.</param>
+        /// <param name="connectTimeoutMilliseconds">The budget, in milliseconds.</param>
+        /// <param name="cancellationToken">Cancelled once the connect has ended.</param>
+        /// <returns>The wait.</returns>
+        private async Task ExpireConnectAsync(uint connectNumber, int connectTimeoutMilliseconds, CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Task.Delay(connectTimeoutMilliseconds, cancellationToken).ConfigureAwait(continueOnCapturedContext: false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            _expiredConnectNumbers.Enqueue(connectNumber);
         }
 
         /// <summary>
@@ -519,7 +625,9 @@ namespace Nucleus.Integrations.Facepunch
         {
             FacepunchMessages.DiscardSplitPackets(_splitPackets);
             _sendQueue.Clear();
+            StopConnectTimeout();
             _statusChanges.Clear();
+            _expiredConnectNumbers.Clear();
             ClearCollection(IncomingPackets);
 
             _connectionManager = null;
@@ -527,6 +635,7 @@ namespace Nucleus.Integrations.Facepunch
             _isLoopback = false;
             _isDialHeld = false;
             _isLinkDropDue = false;
+            IsLastConnectRefused = false;
             _facepunchSockets = null;
 
             base.OnReturn();

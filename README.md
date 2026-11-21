@@ -54,7 +54,7 @@ Shut Steam down only when the game quits, after `UnityTransportManager.ShutdownA
 
 ## FacepunchTransport
 
-The Unity component. Its settings are copied into the engine transport, `FacepunchSockets`, when the transport manager adds it, so changes made while playing are discarded. `RemoteSteamId`, `RemoteAddress`, `BindAddress` and `ConnectingClientFilter` are also script properties that write through at any time and apply at the next start. `Addressing` reads the inspector's choice, and `FacepunchSockets` is the engine transport once added. The status box at the top says whether Steam is initialized, and while a server runs it shows its SteamID, fake address or port with a Copy button.
+The Unity component. Its settings are copied into the engine transport, `FacepunchSockets`, when the transport manager adds it, so changes made while playing are discarded. `RemoteSteamId`, `RemoteAddress`, `BindAddress`, `ConnectingClientFilter` and `ClientAdmissionFilter` are also script properties that write through at any time and apply at the next start. `Addressing` reads the inspector's choice, and `FacepunchSockets` is the engine transport once added. The status box at the top says whether Steam is initialized, and while a server runs it shows its SteamID, fake address or port with a Copy button.
 
 ### Connection
 
@@ -92,7 +92,9 @@ Collapsed by default, with a summary of its values. Everything but Per-Connectio
 
 These live on `FacepunchSockets`, which `FacepunchTransport.FacepunchSockets` and `TransportManager` hold:
 
-- `ConnectingClientFilter`, a `bool (ulong steamId)` called on the network loop thread before the engine sees a client. Return `false` to refuse it, for a ban list or lobby members only.
+- `ConnectingClientFilter`, a `bool (ulong steamId)` called on the network loop thread before the engine sees a client. Return `false` to refuse it; the client only learns its link was closed.
+- `ConnectTimeoutMilliseconds`, the longest a client waits for its link to open before giving up. Zero (`UnsetConnectTimeoutMilliseconds`, the default) leaves it to the Connecting Timeout. Unlike that, it is held by this transport, so changing it never touches links already open.
+- `SendFailed`, raised with `(Invoker, Connection, Channel, Result)` each time Steam refuses a message and the matching refused count goes up. A refused unreliable message is dropped; a refused reliable one closes its link once the handlers return. `Result.LimitExceeded` means the send buffer is full.
 - `ServerSteamId`, the SteamID of the server this peer runs, which clients set as their `RemoteSteamId`; `UnsetSteamId` (0) while it is not listening.
 - `ServerFakeAddress`, the address Steam grants a Fake IP server once it is ready. A game server's grant can come after its logon, seconds after the start; a slow grant is logged as a warning and applied when it arrives.
 - `TryGetLinkStatus(connection, out SteamLinkStatus)`, Steam's ping, connection quality and pending bytes for one link, as read-only properties. On a server, pass a remote client's Connection; on a client, either its own Connection or its server Connection. Facepunch allocates 96 to 192 bytes on each read, so poll it a few times a second, not every frame.
@@ -115,6 +117,8 @@ Steam's own `+connect_lobby <id>` names a lobby, not a host; the Lobbies sample 
 
 On every addressing, a client's `Connection.RemoteAddress` on the server is its SteamID64, authenticated by Steam, so the default authenticator already sets `Identity` to it. The transport refuses unauthenticated peers on IP addresses too (`SteamNetworkingUtils.AllowWithoutAuth` is set to 0). Ticket Authentication adds the ownership and ban check on top, and a ticket is bound to the link's SteamID, so a borrowed or forged one is refused.
 
+With Ticket Authentication on, `FacepunchTransport.ClientAdmissionFilter`, a `bool (Connection connection, ulong steamId)`, is asked about each connecting client before it waits for its ticket, so a refused client costs no auth session. Return `false` to refuse it. To tell the client why, call `ServerManager.DenyClient(connection, notice)` with a message of your own before returning: the notice reaches the client before its link drops. The host's own client skips the filter. The Ban List and Quick Match samples use it.
+
 ### Getting a player's SteamID
 
 `FacepunchSockets.TryGetSteamId(connection, out ulong steamId)` returns a client's Steam-authenticated SteamID, and also accepts a connection id such as `NetworkSystem.ControllerConnectionId`. `TryGetConnection(steamId, out connection)` is the reverse. Get the `FacepunchSockets` from `connection.Transport`.
@@ -124,7 +128,7 @@ A server knows every client, and a client knows itself. To let clients look up e
 ### Behaviour worth knowing
 
 - Every drop logs Steam's close reason once, and a kick's reason arrives before the close.
-- A reliable send that Steam refuses closes the link and logs a line naming the send buffer. Raise Send Buffer Size for large bursts, such as big late-join snapshots.
+- A reliable send that Steam refuses closes the link, logs a line naming the send buffer and raises `SendFailed`. Raise Send Buffer Size for large bursts, such as big late-join snapshots.
 - Lanes are configured once per link, before any traffic: unreliable state gets three parts of the send rate to reliable's one while both wait.
 - A client dialling before Steam's relay network is ready waits for it, up to 10 seconds.
 
@@ -148,6 +152,8 @@ Import them from the package's **Samples** tab in the Package Manager. Import **
 | [Lobby Browser](Samples~/LobbyBrowser/README.md) | Search public lobbies by distance and estimated ping. |
 | [Dedicated Server](Samples~/DedicatedServer/README.md) | A Steam game server behind a fake IP, with a LAN and internet server browser. |
 | [Voice Chat](Samples~/VoiceChat/README.md) | Push to talk Steam voice relayed through the server. Needs the Input System package. |
+| [Ban List](Samples~/BanList/README.md) | Kick, ban and blacklist players by SteamID, and tell a refused client why. |
+| [Quick Match](Samples~/QuickMatch/README.md) | One button matchmaking through invisible Steam lobbies, then a members only session. |
 
 The Quick Start and Voice Chat samples spawn networked prefabs: after importing them, open **Tools > Nucleus** and press **Rebuild** beside Rebuild Network Prefab Collection on its Build tab.
 

@@ -165,15 +165,13 @@ namespace Nucleus.Integrations.Facepunch
                 SteamConnection steamConnection = refusedSend.SteamConnection;
 
                 // A link this socket closed, or Steam closed and is due to drop, refuses its leftovers; that is not news.
-                bool isLinkOpen = _connectionsBySteamConnection.ContainsKey(steamConnection) && !_departedSteamConnections.Contains(steamConnection);
-
-                if (!isLinkOpen || _refusedSteamConnections.Contains(steamConnection))
+                if (!_connectionsBySteamConnection.TryGetValue(steamConnection, out Connection connection) || _departedSteamConnections.Contains(steamConnection) || _refusedSteamConnections.Contains(steamConnection))
                     continue;
 
-                _facepunchSockets.RefusedReliableSendCount++;
                 _refusedSteamConnections.Add(steamConnection);
 
                 Logger<FacepunchServerSocket>.LogError($"Steam refused a reliable message of [{refusedSend.MessageBytes}] bytes: [{refusedSend.Result}]. The link is closed, because the peers can no longer agree.");
+                _facepunchSockets.NotifySendFailed(Invoker.Server, connection, Channel.Reliable, refusedSend.Result);
             }
 
             refusedSends.Clear();
@@ -311,7 +309,12 @@ namespace Nucleus.Integrations.Facepunch
                 return;
             }
 
-            _sendQueue.Send(steamConnection, outgoingPacket, _facepunchSockets);
+            // Read before the send, which hands the packet back to the engine.
+            Connection receiver = outgoingPacket.Receiver;
+            Channel channel = outgoingPacket.Channel;
+
+            if (!_sendQueue.TrySend(steamConnection, outgoingPacket, out Result result))
+                _facepunchSockets.NotifySendFailed(Invoker.Server, receiver, channel, result);
         }
 
         /// <inheritdoc/>

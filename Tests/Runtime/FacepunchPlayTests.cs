@@ -102,6 +102,30 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// </summary>
         private const uint BurstSendRateKilobytesPerSecond = 768;
         /// <summary>
+        /// The send rate both peers of the refusal case keep to, in kilobytes per second, slow enough that the buffer cannot drain mid-burst.
+        /// </summary>
+        private const uint RefusalSendRateKilobytesPerSecond = 64;
+        /// <summary>
+        /// The send buffer both peers of the refusal case keep, in bytes, a small part of the burst.
+        /// </summary>
+        private const uint RefusalSendBufferBytes = 16 * 1024;
+        /// <summary>
+        /// How many unreliable messages the refusal case sends in one frame.
+        /// </summary>
+        private const int RefusalMessageCount = 200;
+        /// <summary>
+        /// The length of each message the refusal case sends, short enough to stay one packet each.
+        /// </summary>
+        private const int RefusalPayloadCharacters = 900;
+        /// <summary>
+        /// The connect timeout the unused port case gives its client, in milliseconds, well under Steam's ten second connecting timeout.
+        /// </summary>
+        private const uint ConnectTimeoutMilliseconds = 2000;
+        /// <summary>
+        /// How far past its budget the unused port case lets its client give up, in milliseconds, for the frames the expiry waits on.
+        /// </summary>
+        private const uint ConnectTimeoutSlackMilliseconds = 1500;
+        /// <summary>
         /// How many systems the server holds before the late client joins.
         /// </summary>
         private const int LateJoinSystemCount = 50;
@@ -171,6 +195,22 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// When the unreliable probe arrived, in seconds since startup, or below zero before it arrives.
         /// </summary>
         private float _probeArrivedSeconds = -1f;
+        /// <summary>
+        /// The server manager the admission case refuses clients through, or <see langword="null"/> outside it.
+        /// </summary>
+        private ServerManager _admissionServerManager;
+        /// <summary>
+        /// How many times the server raised <see cref="FacepunchSockets.SendFailed"/>.
+        /// </summary>
+        private int _sendFailedCount;
+        /// <summary>
+        /// How many of those named anything but a full buffer for a remote client's unreliable message.
+        /// </summary>
+        private int _sendFailedOtherCount;
+        /// <summary>
+        /// The Connection the last refusal named, or <see langword="null"/> before one.
+        /// </summary>
+        private Connection _sendFailedConnection;
 
         /// <summary>
         /// Skips the case unless Steam is running, and initializes Steam unless something already has.
@@ -214,6 +254,10 @@ namespace Nucleus.Integrations.Facepunch.Tests
             _isFilteredClientAllowed = false;
             _burstArrivedSeconds = -1f;
             _probeArrivedSeconds = -1f;
+            _admissionServerManager = null;
+            _sendFailedCount = 0;
+            _sendFailedOtherCount = 0;
+            _sendFailedConnection = null;
 
             foreach (List<int> receivedIndices in _receivedSequencedIndices)
                 receivedIndices.Clear();
@@ -888,11 +932,168 @@ namespace Nucleus.Integrations.Facepunch.Tests
             Assert.IsFalse(IsClientAuthenticated(clientCoreManager), "A client the filter refused joined.");
             Assert.AreEqual(0, serverCoreManager.CoreManager.TransportManager.ActiveConnections.Count, "The server holds a client the filter refused.");
 
+            FacepunchSockets clientFacepunchSockets = (FacepunchSockets)clientTransportManager.Transports[0];
+            Assert.IsTrue(clientFacepunchSockets.IsLastConnectRefused, "A connect the server refused was not reported as refused.");
+
             _isFilteredClientAllowed = true;
 
             yield return WaitForTask(clientTransportManager.StartClientAsync());
             yield return WaitUntil(() => IsClientAuthenticated(clientCoreManager));
             Assert.IsTrue(IsClientAuthenticated(clientCoreManager), "The client never joined once the filter let it in.");
+            Assert.IsFalse(clientFacepunchSockets.IsLastConnectRefused, "A connect that opened was still reported as refused.");
+        }
+
+        /// <summary>
+        /// A client with a connect timeout, dialling a loopback port nothing listens on, gives up near its budget rather than waiting on
+        /// Steam's own timeout, and is not reported as refused.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator RemoteClient_ToAnUnusedPort_GivesUpNearItsConnectTimeout()
+        {
+            ushort port = ProbeFreeUdpPort();
+            UnityCoreManager clientCoreManager = NewPeer("SteamClient", out UnityTransportManager clientTransportManager, out FacepunchTransport clientFacepunchTransport);
+            clientFacepunchTransport.RemoteAddress = $"127.0.0.1:{port}";
+
+            yield return WaitForTask(clientTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets clientFacepunchSockets = (FacepunchSockets)clientTransportManager.Transports[0];
+            clientFacepunchSockets.Addressing = FacepunchAddressing.IpAddress;
+            clientFacepunchSockets.ConnectTimeoutMilliseconds = ConnectTimeoutMilliseconds;
+
+            float startedSeconds = Time.realtimeSinceStartup;
+            LogAssert.ignoreFailingMessages = true;
+
+            try
+            {
+                yield return WaitForTask(clientTransportManager.StartClientAsync());
+                yield return WaitUntil(() => IsClientDisconnected(clientCoreManager));
+            }
+            finally
+            {
+                LogAssert.ignoreFailingMessages = false;
+            }
+
+            float elapsedMilliseconds = (Time.realtimeSinceStartup - startedSeconds) * 1000f;
+            Debug.Log($"[{nameof(FacepunchPlayTests)}] connect to an unused port gave up after [{elapsedMilliseconds:F0}] ms, budget [{ConnectTimeoutMilliseconds}] ms.");
+
+            Assert.IsTrue(IsClientDisconnected(clientCoreManager), "The client never gave up.");
+            Assert.GreaterOrEqual(elapsedMilliseconds, ConnectTimeoutMilliseconds * 0.9f, "The client gave up before its budget, so something other than the timeout ended it.");
+            Assert.Less(elapsedMilliseconds, ConnectTimeoutMilliseconds + ConnectTimeoutSlackMilliseconds, "The client waited well past its budget.");
+            Assert.IsFalse(clientFacepunchSockets.IsLastConnectRefused, "A connect nobody answered was reported as refused.");
+        }
+
+        /// <summary>
+        /// A client the admission filter refuses receives the refusal's reason before its link drops and is never authenticated, and the
+        /// filter is asked with the client's own SteamID.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator TicketAuthentication_ClientRefusedByTheAdmissionFilter_IsNeverAdmitted()
+        {
+            ushort port = ProbeFreeUdpPort();
+            UnityCoreManager serverCoreManager = NewPeer("SteamServer", out UnityTransportManager serverTransportManager, out FacepunchTransport _);
+            UnityCoreManager clientCoreManager = NewPeer("SteamClient", out UnityTransportManager clientTransportManager, out FacepunchTransport clientFacepunchTransport);
+            clientFacepunchTransport.RemoteAddress = $"127.0.0.1:{port}";
+
+            yield return WaitForTask(serverTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets serverFacepunchSockets = (FacepunchSockets)serverTransportManager.Transports[0];
+            serverFacepunchSockets.Addressing = FacepunchAddressing.IpAddress;
+            serverFacepunchSockets.SetPort(port);
+
+            _admissionServerManager = serverCoreManager.CoreManager.ServerManager;
+            SteamTicketAuthenticator steamTicketAuthenticator = new() { ClientAdmissionFilter = RefuseAdmission };
+            steamTicketAuthenticator.Initialize(serverCoreManager.CoreManager, serverFacepunchSockets);
+
+            MessageManager clientMessageManager = clientCoreManager.CoreManager.MessageManager;
+            clientMessageManager.RegisterMessageHandler<SteamPlayTestKickNotice>(OnKickNoticeReceived);
+
+            try
+            {
+                yield return WaitForTask(serverTransportManager.StartServerAsync());
+                yield return WaitForTask(clientTransportManager.EnsureAddedAsync());
+
+                ((FacepunchSockets)clientTransportManager.Transports[0]).Addressing = FacepunchAddressing.IpAddress;
+
+                yield return WaitForTask(clientTransportManager.StartClientAsync());
+                yield return WaitUntil(() => _receivedKickReason is not null && !IsClientConnected(clientCoreManager));
+            }
+            finally
+            {
+                clientMessageManager.UnregisterMessageHandler<SteamPlayTestKickNotice>(OnKickNoticeReceived);
+                steamTicketAuthenticator.Deinitialize();
+            }
+
+            Assert.AreEqual(SteamClient.SteamId.Value, _filteredSteamId, "The admission filter was not asked with the connecting client's SteamID.");
+            Assert.AreEqual(KickReason, _receivedKickReason, "The refusal's reason did not reach the client.");
+            Assert.IsFalse(IsClientConnected(clientCoreManager), "The refused client's link never dropped.");
+            Assert.IsFalse(IsClientAuthenticated(clientCoreManager), "The refused client was authenticated.");
+        }
+
+        /// <summary>
+        /// A server whose send buffer is far smaller than a burst of unreliable messages raises <see cref="FacepunchSockets.SendFailed"/>
+        /// for every message Steam refuses, naming the client and the channel, and its count agrees with the event.
+        /// </summary>
+        /// <returns>The coroutine driving the case.</returns>
+        [UnityTest]
+        [Timeout(60000)]
+        public IEnumerator Server_SendsAnUnreliableBurstPastItsSendBuffer_RaisesSendFailedForEachRefusal()
+        {
+            int steamSendRateMinimumBytesPerSecond = SteamNetworkingUtils.SendRateMin;
+            int steamSendRateMaximumBytesPerSecond = SteamNetworkingUtils.SendRateMax;
+            int steamSendBufferBytes = SteamNetworkingUtils.SendBufferSize;
+            ushort port = ProbeFreeUdpPort();
+
+            UnityCoreManager serverCoreManager = NewPeer("SteamServer", out UnityTransportManager serverTransportManager, out FacepunchTransport _);
+            UnityCoreManager clientCoreManager = NewPeer("SteamClient", out UnityTransportManager clientTransportManager, out FacepunchTransport clientFacepunchTransport);
+            clientFacepunchTransport.RemoteAddress = $"127.0.0.1:{port}";
+
+            yield return WaitForTask(serverTransportManager.EnsureAddedAsync());
+            yield return WaitForTask(clientTransportManager.EnsureAddedAsync());
+
+            FacepunchSockets serverFacepunchSockets = (FacepunchSockets)serverTransportManager.Transports[0];
+            FacepunchSockets clientFacepunchSockets = (FacepunchSockets)clientTransportManager.Transports[0];
+
+            // Steam's send settings are process wide and each peer writes its own at start, so both carry the small buffer.
+            UseIpAddressingAndSendRate(serverFacepunchSockets, port, RefusalSendRateKilobytesPerSecond);
+            UseIpAddressingAndSendRate(clientFacepunchSockets, port, RefusalSendRateKilobytesPerSecond);
+            serverFacepunchSockets.SendBufferSizeBytes = RefusalSendBufferBytes;
+            clientFacepunchSockets.SendBufferSizeBytes = RefusalSendBufferBytes;
+            serverFacepunchSockets.SendFailed += OnSendFailed;
+
+            try
+            {
+                yield return WaitForTask(serverTransportManager.StartServerAsync());
+                yield return WaitForTask(clientTransportManager.StartClientAsync());
+                yield return WaitUntil(() => IsClientAuthenticated(clientCoreManager) && TryGetRemoteClientConnection(serverCoreManager, out Connection _));
+                Assert.IsTrue(TryGetRemoteClientConnection(serverCoreManager, out Connection remoteClientConnection), "The server holds no remote client.");
+
+                int refusedUnreliableSendCount = serverFacepunchSockets.RefusedUnreliableSendCount;
+                int refusedReliableSendCount = serverFacepunchSockets.RefusedReliableSendCount;
+                string text = new('x', RefusalPayloadCharacters);
+
+                for (int i = 0; i < RefusalMessageCount; i++)
+                    remoteClientConnection.SendMessage(Channel.Unreliable, new SteamPlayTestPayload { Text = text });
+
+                // The engine hands its packets to the transport on its next send step.
+                yield return WaitUntil(() => _sendFailedCount > 0);
+
+                Assert.Greater(_sendFailedCount, 0, "Steam refused nothing, so the case forced no refusal.");
+                Assert.AreEqual(_sendFailedCount, serverFacepunchSockets.RefusedUnreliableSendCount - refusedUnreliableSendCount, "The refused unreliable count and the event disagree.");
+                Assert.AreEqual(refusedReliableSendCount, serverFacepunchSockets.RefusedReliableSendCount, "A reliable send was refused.");
+                Assert.AreEqual(0, _sendFailedOtherCount, "An event named the wrong side, client or channel, or a reason other than a full buffer.");
+                Assert.AreSame(remoteClientConnection, _sendFailedConnection, "The event did not name the client the message was for.");
+            }
+            finally
+            {
+                serverFacepunchSockets.SendFailed -= OnSendFailed;
+                SteamNetworkingUtils.SendRateMin = steamSendRateMinimumBytesPerSecond;
+                SteamNetworkingUtils.SendRateMax = steamSendRateMaximumBytesPerSecond;
+                SteamNetworkingUtils.SendBufferSize = steamSendBufferBytes;
+            }
         }
 
         /// <summary>
@@ -1042,6 +1243,36 @@ namespace Nucleus.Integrations.Facepunch.Tests
             _filteredSteamId = steamId;
 
             return _isFilteredClientAllowed;
+        }
+
+        /// <summary>
+        /// Records the SteamID a client is being admitted under, and refuses it with the kick reason as its notice.
+        /// </summary>
+        /// <param name="connection">The connecting client.</param>
+        /// <param name="steamId">The SteamID its link was authenticated as.</param>
+        /// <returns><see langword="false"/>, refusing every client.</returns>
+        private bool RefuseAdmission(Connection connection, ulong steamId)
+        {
+            _filteredSteamId = steamId;
+            _admissionServerManager.DenyClient(connection, new SteamPlayTestKickNotice { Reason = KickReason });
+
+            return false;
+        }
+
+        /// <summary>
+        /// Counts a refusal the server raised, and every one that names anything but a full buffer for a remote client's unreliable message.
+        /// </summary>
+        /// <param name="invoker">Which half was sending.</param>
+        /// <param name="connection">Who the message was for.</param>
+        /// <param name="channel">The channel it was sent on.</param>
+        /// <param name="result">Steam's reason.</param>
+        private void OnSendFailed(Invoker invoker, Connection connection, Channel channel, Result result)
+        {
+            _sendFailedCount++;
+            _sendFailedConnection = connection;
+
+            if (invoker is not Invoker.Server || channel is not Channel.Unreliable || result is not Result.LimitExceeded)
+                _sendFailedOtherCount++;
         }
 
         /// <summary>

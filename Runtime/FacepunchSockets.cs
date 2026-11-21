@@ -54,6 +54,25 @@ namespace Nucleus.Integrations.Facepunch
         /// <param name="steamId">The client's SteamID64, or <see cref="UnsetSteamId"/> when the client has left.</param>
         public delegate void SteamIdChangedHandler(uint connectionId, ulong steamId);
         /// <summary>
+        /// Steam refused a message either half of this transport handed it, and the refusal was counted in
+        /// <see cref="RefusedReliableSendCount"/> or <see cref="RefusedUnreliableSendCount"/>.
+        /// </summary>
+        /// <remarks>
+        /// Raised on the network loop thread, from inside the send or the flush. A refused unreliable message is dropped; a refused reliable
+        /// one closes its link once the handlers return, because the peers can no longer agree. <see cref="Result.LimitExceeded"/> means the
+        /// connection's send buffer is full, usually because the send rate is below what the game sends. A link the peer has already closed
+        /// refuses with <see cref="Result.NoConnection"/>, which is neither counted nor raised, since Steam's report of the close is on its way.
+        /// </remarks>
+        public event SendFailedHandler SendFailed;
+        /// <summary>
+        /// Handler for the <see cref="SendFailed"/> event.
+        /// </summary>
+        /// <param name="invoker">Which half of this transport was sending.</param>
+        /// <param name="connection">Who the message was for: the client on a server, or the server's Connection on a client.</param>
+        /// <param name="channel">The channel it was sent on.</param>
+        /// <param name="result">Steam's reason for refusing it.</param>
+        public delegate void SendFailedHandler(Invoker invoker, Connection connection, Channel channel, Result result);
+        /// <summary>
         /// How the server is reached, and so how a client dials it.
         /// </summary>
         /// <remarks>Read at the next start of either half. Both sides have to agree on it.</remarks>
@@ -114,6 +133,15 @@ namespace Nucleus.Integrations.Facepunch
         /// <remarks>Only the server's setting counts. A SteamID links to the player's public Steam profile, so leave this off where players should not learn who the others are.</remarks>
         public bool ShareSteamIdsEnabled;
         /// <summary>
+        /// The longest a client waits for its link to open before giving up, in milliseconds.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="UnsetConnectTimeoutMilliseconds"/> leaves it to Steam's connecting timeout, which still applies when it is shorter. A
+        /// deadline on this side, so changing it never touches links already open, as Steam's process-wide timeout would. Counts any wait for
+        /// Steam's relay network. Read at the next client start; a host's own client pairs in process at once.
+        /// </remarks>
+        public uint ConnectTimeoutMilliseconds = UnsetConnectTimeoutMilliseconds;
+        /// <summary>
         /// An optional gate every client asking to connect passes before the engine sees it, or <see langword="null"/> to accept anyone while the server has room.
         /// </summary>
         /// <remarks>Called on the network loop thread. A refused client is closed with a reason it can log.</remarks>
@@ -128,11 +156,11 @@ namespace Nucleus.Integrations.Facepunch
         /// <summary>
         /// How many reliable sends Steam has refused since this transport was added, each of which closed its link.
         /// </summary>
-        public int RefusedReliableSendCount { get; internal set; }
+        public int RefusedReliableSendCount { get; private set; }
         /// <summary>
         /// How many unreliable sends Steam has refused since this transport was added, each of which was dropped.
         /// </summary>
-        public int RefusedUnreliableSendCount { get; internal set; }
+        public int RefusedUnreliableSendCount { get; private set; }
         /// <summary>
         /// The largest reliable packet the engine has handed this transport since it was added, in bytes.
         /// </summary>
@@ -155,6 +183,10 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         public const ulong UnsetSteamId = 0;
         /// <summary>
+        /// The <see cref="ConnectTimeoutMilliseconds"/> that leaves a connect to Steam's own timeout.
+        /// </summary>
+        public const uint UnsetConnectTimeoutMilliseconds = 0;
+        /// <summary>
         /// The value of a send setting that leaves Steam's value alone.
         /// </summary>
         public const uint UnsetSendSetting = 0;
@@ -170,6 +202,11 @@ namespace Nucleus.Integrations.Facepunch
         /// The launch-argument flag which sets <see cref="RemoteSteamId"/>.
         /// </summary>
         public const string SteamIdArgument = "steamid";
+        /// <summary>
+        /// Whether the client's last connect was closed by the server before it opened, rather than timing out or failing on this peer.
+        /// </summary>
+        /// <remarks>Kept after the connect fails, until the next one starts.</remarks>
+        internal bool IsLastConnectRefused => ClientSocket is { IsLastConnectRefused: true };
         /// <summary>
         /// The send buffer Steam gives a connection by default, in bytes.
         /// </summary>
@@ -640,6 +677,30 @@ namespace Nucleus.Integrations.Facepunch
                 RemoteSteamId = steamId;
             else
                 Logger<FacepunchSockets>.LogError($"The launch argument [{SteamIdArgument}] value [{steamIdText}] is not a SteamID.");
+        }
+
+        /// <summary>
+        /// Counts a message Steam refused and raises <see cref="SendFailed"/>, keeping a handler that throws from breaking the send it was raised from.
+        /// </summary>
+        /// <param name="invoker">Which half of this transport was sending.</param>
+        /// <param name="connection">Who the message was for.</param>
+        /// <param name="channel">The channel it was sent on.</param>
+        /// <param name="result">Steam's reason for refusing it.</param>
+        internal void NotifySendFailed(Invoker invoker, Connection connection, Channel channel, Result result)
+        {
+            if (channel is Channel.Reliable)
+                RefusedReliableSendCount++;
+            else
+                RefusedUnreliableSendCount++;
+
+            try
+            {
+                SendFailed?.Invoke(invoker, connection, channel, result);
+            }
+            catch (Exception exception)
+            {
+                Logger<FacepunchSockets>.LogError($"A [{nameof(SendFailed)}] handler threw: [{exception}].");
+            }
         }
 
         /// <summary>

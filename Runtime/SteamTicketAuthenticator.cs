@@ -26,6 +26,18 @@ namespace Nucleus.Integrations.Facepunch
     public class SteamTicketAuthenticator : Managers.Server.IClientAuthenticator, INetworkLoopStepCallback
     {
         /// <summary>
+        /// Decides whether a connecting client may continue to the ticket check.
+        /// </summary>
+        /// <param name="connection">The client, which may be refused with a reason through <c>ServerManager.DenyClient(connection, notice)</c>.</param>
+        /// <param name="steamId">The SteamID its link was authenticated as. This is the player, not the game's owner under Family Sharing.</param>
+        /// <returns><see langword="true"/> to continue, or <see langword="false"/> to refuse the client.</returns>
+        public delegate bool ClientAdmissionFilterHandler(Connection connection, ulong steamId);
+        /// <summary>
+        /// Consulted on the network loop thread for each connecting client before it waits for a ticket, so a refused client costs no
+        /// auth session, or <see langword="null"/> to admit every client to the ticket check. The host's own client skips it.
+        /// </summary>
+        public ClientAdmissionFilterHandler ClientAdmissionFilter;
+        /// <summary>
         /// The engine this authenticator is registered with, or <see langword="null"/> while it is not.
         /// </summary>
         private CoreManager _coreManager;
@@ -106,6 +118,14 @@ namespace Nucleus.Integrations.Facepunch
             if (!ulong.TryParse(connection.RemoteAddress, out ulong steamId) || steamId == FacepunchSockets.UnsetSteamId)
             {
                 Logger<SteamTicketAuthenticator>.LogWarning($"A client with no SteamID [{connection.RemoteAddress}] was refused.");
+                _coreManager.ServerManager.DenyClient(connection);
+
+                return;
+            }
+
+            if (ClientAdmissionFilter is not null && !ClientAdmissionFilter(connection, steamId))
+            {
+                // A filter that already refused the client with a notice leaves nothing for this call to do.
                 _coreManager.ServerManager.DenyClient(connection);
 
                 return;

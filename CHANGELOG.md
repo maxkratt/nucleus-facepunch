@@ -1,5 +1,12 @@
 # Changelog
 
+## Nucleus Facepunch.Steamworks 0.4.0
+- New `FacepunchSockets.SendFailed` event, raised with the side, the Connection, the channel and Steam's `Result` each time Steam refuses a message. `RefusedReliableSendCount` and `RefusedUnreliableSendCount` count the same refusals and are now read only.
+- New `FacepunchSockets.ConnectTimeoutMilliseconds`: the longest a client waits for its link to open before giving up. Zero, the default, leaves it to the Connecting Timeout. It is held by the transport, so unlike Steam's timeout it never touches links already open.
+- New `ClientAdmissionFilter` on `SteamTicketAuthenticator` and `FacepunchTransport`, a `bool (Connection, ulong steamId)` asked about each connecting client before it waits for its ticket. A client it refuses can be told why through `ServerManager.DenyClient(connection, notice)`.
+- New Ban List sample: kick, ban and blacklist players by SteamID, and tell a refused client why.
+- New Quick Match sample: one button matchmaking through invisible Steam lobbies, then a session only the lobby's members can join.
+
 ## Nucleus Facepunch.Steamworks 0.3.1
 - Simulated latency and loss set with `SetNetworkConditions` are cleared from Steam when the transport shuts down. Steam keeps them for the whole process, so they used to carry into the next session.
 - `FacepunchSockets.TryGetLinkStatus` on a client now reads the link through the client's server Connection as well as its own Connection.

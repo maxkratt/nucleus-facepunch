@@ -68,21 +68,28 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         /// <param name="steamConnection">The connection to send on.</param>
         /// <param name="outgoingPacket">The packet to send.</param>
-        /// <param name="facepunchSockets">The transport, which counts refused unreliable messages.</param>
+        /// <param name="result">Steam's answer to an unreliable packet, or <see cref="Result.OK"/> for a queued reliable one.</param>
+        /// <returns>
+        /// <see langword="false"/> when Steam refused an unreliable packet, which is dropped. A link the peer has already closed is not a
+        /// refusal, since Steam's report of the close is on its way.
+        /// </returns>
         /// <remarks>
         /// The engine splits unreliable packets to the transmission unit itself, so only a reliable packet can reach a message's limit. Its
         /// pieces ride the reliable lane, which keeps them in order, and each but the last carries <see cref="FacepunchMessages.MorePiecesFlag"/>.
         /// </remarks>
-        public void Send(SteamConnection steamConnection, OutgoingPacket outgoingPacket, FacepunchSockets facepunchSockets)
+        public bool TrySend(SteamConnection steamConnection, OutgoingPacket outgoingPacket, out Result result)
         {
             ArraySegment<byte> payload = outgoingPacket.Payload;
+            result = Result.OK;
 
             if (outgoingPacket.Channel is Channel.Reliable)
                 QueueReliablePieces(steamConnection, payload);
             else
-                SendUnreliable(steamConnection, payload, facepunchSockets);
+                result = SendUnreliable(steamConnection, payload);
 
             TransportManager.PacketOffloaded(outgoingPacket);
+
+            return result is Result.OK or Result.NoConnection;
         }
 
         /// <summary>
@@ -184,12 +191,12 @@ namespace Nucleus.Integrations.Facepunch
         }
 
         /// <summary>
-        /// Sends an unreliable packet now, counting it when Steam refuses it.
+        /// Sends an unreliable packet now.
         /// </summary>
         /// <param name="steamConnection">The connection to send on.</param>
         /// <param name="payload">The packet's bytes.</param>
-        /// <param name="facepunchSockets">The transport, which counts refused messages.</param>
-        private void SendUnreliable(SteamConnection steamConnection, ArraySegment<byte> payload, FacepunchSockets facepunchSockets)
+        /// <returns>Steam's answer.</returns>
+        private Result SendUnreliable(SteamConnection steamConnection, ArraySegment<byte> payload)
         {
             int messageBytes = payload.Count + FacepunchMessages.HeaderBytes;
 
@@ -205,9 +212,7 @@ namespace Nucleus.Integrations.Facepunch
             if (_estimatedBudgetBytes.TryGetValue(steamConnection, out int budgetBytes))
                 _estimatedBudgetBytes[steamConnection] = Math.Max(budgetBytes - messageBytes - ReliableHeaderAllowanceBytes, 0);
 
-            // A link the peer has already closed has no one to reach, and Steam's report of the close is on its way.
-            if (result is not Result.OK and not Result.NoConnection)
-                facepunchSockets.RefusedUnreliableSendCount++;
+            return result;
         }
 
         /// <summary>

@@ -77,6 +77,21 @@ namespace Nucleus.Integrations.Facepunch
             }
         }
         /// <summary>
+        /// Consulted for each connecting client before it waits for a ticket, or <see langword="null"/> to admit every client to the ticket check.
+        /// </summary>
+        /// <remarks>Used only while Ticket Authentication is on. Accepted at any time and applied to the authenticator this component registers. See <see cref="SteamTicketAuthenticator.ClientAdmissionFilter"/>.</remarks>
+        public SteamTicketAuthenticator.ClientAdmissionFilterHandler ClientAdmissionFilter
+        {
+            get => _clientAdmissionFilter;
+            set
+            {
+                _clientAdmissionFilter = value;
+
+                if (_steamTicketAuthenticator is not null)
+                    _steamTicketAuthenticator.ClientAdmissionFilter = value;
+            }
+        }
+        /// <summary>
         /// How the server is reached, as set in the inspector.
         /// </summary>
         public FacepunchAddressing Addressing => _addressing;
@@ -194,6 +209,10 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         private FacepunchSockets.ConnectingClientFilterHandler _connectingClientFilter;
         /// <summary>
+        /// The filter handed to the ticket authenticator at each start, or <see langword="null"/> for none.
+        /// </summary>
+        private SteamTicketAuthenticator.ClientAdmissionFilterHandler _clientAdmissionFilter;
+        /// <summary>
         /// The authenticator this component registered, or <see langword="null"/> when ticket authentication is off.
         /// </summary>
         private SteamTicketAuthenticator _steamTicketAuthenticator;
@@ -225,7 +244,7 @@ namespace Nucleus.Integrations.Facepunch
 
             if (_ticketAuthenticationEnabled)
             {
-                _steamTicketAuthenticator = new();
+                _steamTicketAuthenticator = new() { ClientAdmissionFilter = _clientAdmissionFilter };
                 _steamTicketAuthenticator.Initialize(coreManager, FacepunchSockets);
             }
 
