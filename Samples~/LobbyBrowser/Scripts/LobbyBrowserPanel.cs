@@ -498,8 +498,6 @@ namespace Nucleus.Integrations.Facepunch.Samples.LobbyBrowser
 
                     break;
                 case LocalConnectionState.Disconnected:
-                case LocalConnectionState.Error:
-                case LocalConnectionState.TimedOut:
                     Leave(_hasConnected ? "The host left, or the connection dropped." : "Could not connect to the host.");
                     break;
             }

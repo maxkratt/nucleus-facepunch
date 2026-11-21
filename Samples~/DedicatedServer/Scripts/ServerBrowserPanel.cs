@@ -304,8 +304,6 @@ namespace Nucleus.Integrations.Facepunch.Samples.DedicatedServer
 
                     break;
                 case LocalConnectionState.Disconnected:
-                case LocalConnectionState.Error:
-                case LocalConnectionState.TimedOut:
                     Leave(_hasConnected ? "The server closed the connection, or it dropped." : "Could not connect to the server.");
                     break;
             }

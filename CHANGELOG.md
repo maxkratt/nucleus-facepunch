@@ -1,5 +1,8 @@
 # Changelog
 
+## Nucleus Facepunch.Steamworks 0.2.1
+- Samples: the panels compile against Nucleus versions without `LocalConnectionState.Error` and `TimedOut`. A failed or timed-out connection ends in `Disconnected`, which the panels already handle.
+
 ## Nucleus Facepunch.Steamworks 0.2.0
 - Lobbies and Lobby Browser samples: the host names itself the lobby's game server with `Lobby.SetGameServer`, and a joiner connects to that game server rather than the lobby owner. A player who enters a lobby whose host has left is told so at once instead of trying to connect.
 - Shared sample: new `PlayerMover`, used by the Quick Start and Voice Chat players. It moves the player freely instead of within a radius, lets it fall off the ground, and puts it back above the origin once it falls below a set height. It compiles only with the Input System package.
