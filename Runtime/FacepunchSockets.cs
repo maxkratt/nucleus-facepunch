@@ -172,6 +172,7 @@ namespace Nucleus.Integrations.Facepunch
         /// <summary>
         /// The fake address and port Steam granted this server in <see cref="FacepunchAddressing.FakeIp"/>, or <see langword="null"/> until Steam grants one.
         /// </summary>
+        /// <remarks>Cleared when the server stops. Steam grants one address per process, so a restarted server is given the same one again.</remarks>
         public string ServerFakeAddress { get; internal set; }
         /// <summary>
         /// The SteamID64 of the server this peer is running, which a client in <see cref="FacepunchAddressing.SteamId"/> sets as its <see cref="RemoteSteamId"/>.
@@ -203,10 +204,25 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         public const string SteamIdArgument = "steamid";
         /// <summary>
+        /// Steam granted the server its fake address, refused it one, or the server stopped listening, so nothing waiting on a grant need
+        /// wait any longer.
+        /// </summary>
+        /// <remarks>Raised on whichever thread drove the server: the network loop's, or the caller of its start or stop.</remarks>
+        internal event ServerFakeIpSettledHandler ServerFakeIpSettled;
+        /// <summary>
+        /// Handler for the <see cref="ServerFakeIpSettled"/> event.
+        /// </summary>
+        internal delegate void ServerFakeIpSettledHandler();
+        /// <summary>
         /// Whether the client's last connect was closed by the server before it opened, rather than timing out or failing on this peer.
         /// </summary>
         /// <remarks>Kept after the connect fails, until the next one starts.</remarks>
         internal bool IsLastConnectRefused => ClientSocket is { IsLastConnectRefused: true };
+        /// <summary>
+        /// Whether Steam refused the server's last fake address request.
+        /// </summary>
+        /// <remarks>Kept after the refusal, until the server asks again.</remarks>
+        internal bool IsServerFakeIpRefused => ServerSocket is { IsFakeIpRefused: true };
         /// <summary>
         /// The send buffer Steam gives a connection by default, in bytes.
         /// </summary>
@@ -700,6 +716,21 @@ namespace Nucleus.Integrations.Facepunch
             catch (Exception exception)
             {
                 Logger<FacepunchSockets>.LogError($"A [{nameof(SendFailed)}] handler threw: [{exception}].");
+            }
+        }
+
+        /// <summary>
+        /// Raises <see cref="ServerFakeIpSettled"/>, keeping a handler that throws from breaking the server pass it was raised from.
+        /// </summary>
+        internal void NotifyServerFakeIpSettled()
+        {
+            try
+            {
+                ServerFakeIpSettled?.Invoke();
+            }
+            catch (Exception exception)
+            {
+                Logger<FacepunchSockets>.LogError($"A [{nameof(ServerFakeIpSettled)}] handler threw: [{exception}].");
             }
         }
 

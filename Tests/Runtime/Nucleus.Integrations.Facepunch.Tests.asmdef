@@ -21,6 +21,8 @@
         "nunit.framework.dll",
         "Nucleus.dll",
         "CodeBoost.dll",
+        "Newfarm.Client.dll",
+        "Newfarm.Server.dll",
         "Facepunch.Steamworks.Win64.dll",
         "Facepunch.Steamworks.Win32.dll",
         "Facepunch.Steamworks.Posix.dll"

@@ -36,6 +36,11 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         internal bool IsListening => _socketManager is not null;
         /// <summary>
+        /// Whether Steam refused this server's last fake address request, rather than granting it or not answering yet.
+        /// </summary>
+        /// <remarks>Kept after the refusal, until the next request starts.</remarks>
+        internal bool IsFakeIpRefused { get; private set; }
+        /// <summary>
         /// The transport this socket belongs to, which holds the settings it reads.
         /// </summary>
         private FacepunchSockets _facepunchSockets;
@@ -413,6 +418,7 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         private void RequestFakeIp()
         {
+            IsFakeIpRefused = false;
             SteamNetworkingSockets.OnFakeIPResult += OnFakeIpResult;
 
             if (SteamNetworkingSockets.RequestFakeIP(numFakePorts: 1))
@@ -432,11 +438,20 @@ namespace Nucleus.Integrations.Facepunch
 
             // A game server's grant waits for its logon, which can take longer than the timeout; the grant still raises the event.
             if (result is Result.OK)
+            {
                 ApplyFakeIp(netAddress);
+            }
             else if (result is Result.Busy)
+            {
                 Logger<FacepunchServerSocket>.LogWarning($"Steam has not answered the fake address request after [{FakeIpTimeoutSeconds}] seconds. The address is applied when Steam grants it.");
+            }
             else
+            {
+                // Facepunch raises nothing for a refused request, so this read is the only place the refusal can be heard.
+                IsFakeIpRefused = true;
                 Logger<FacepunchServerSocket>.LogError($"Steam did not grant a fake address: [{result}]. Clients cannot reach this server by one.");
+                _facepunchSockets.NotifyServerFakeIpSettled();
+            }
         }
 
         /// <summary>
@@ -450,6 +465,7 @@ namespace Nucleus.Integrations.Facepunch
             _facepunchSockets.ServerFakeAddress = netAddress.ToString();
 
             Logger<FacepunchServerSocket>.LogInformation($"Steam granted this server the fake address [{_facepunchSockets.ServerFakeAddress}].");
+            _facepunchSockets.NotifyServerFakeIpSettled();
         }
 
         /// <summary>
@@ -745,16 +761,20 @@ namespace Nucleus.Integrations.Facepunch
         }
 
         /// <summary>
-        /// Closes the listen socket and stops hearing from it.
+        /// Closes the listen socket and stops hearing from it, and forgets the fake address, which only a listening server has.
         /// </summary>
         /// <remarks>
         /// Facepunch reports a locally closed connection later; without an interface that report goes nowhere. A Steam shut down under
-        /// the server took the socket with it, and Facepunch throws on closing it then.
+        /// the server took the socket with it, and Facepunch throws on closing it then. Anyone waiting on a fake address hears that none
+        /// will come.
         /// </remarks>
         private void ReleaseListenSocket()
         {
             SteamNetworkingSockets.OnFakeIPResult -= OnFakeIpResult;
             _fakeIpDeadlineTimestamp = UnsetTimestamp;
+            _fakeIpResults.Clear();
+            _facepunchSockets.ServerFakeAddress = null;
+            _facepunchSockets.NotifyServerFakeIpSettled();
 
             if (_socketManager is not null)
             {
@@ -866,6 +886,7 @@ namespace Nucleus.Integrations.Facepunch
             _currentReceivedPackets = null;
             _isPerConnectionReceive = false;
             _fakeIpDeadlineTimestamp = UnsetTimestamp;
+            IsFakeIpRefused = false;
             _loopbackIdBySocket = Connection.UnsetId;
             _facepunchSockets = null;
 

@@ -29,7 +29,8 @@ namespace Nucleus.Integrations.Facepunch.Tests
     /// Play mode coverage of <see cref="FacepunchSockets"/> on a running Steam: a host's own client and a host kicking it, a remote client,
     /// a kick with a reason, a client that disconnects and joins again, a client that sends past the server's packet limit, reliable and
     /// unreliable messages sent both ways, each arriving on its own channel and the reliable ones in order, link status and simulated
-    /// latency, the connecting filter, launch arguments, an unreliable message overtaking a reliable burst, and late joins over wide values.
+    /// latency, the connecting filter, launch arguments, an unreliable message overtaking a reliable burst, late joins over wide values, and
+    /// host migration.
     /// </summary>
     /// <remarks>
     /// Skipped unless the Steam client is running, since there is no mock of Steam. Every peer runs in this process on one account, so
@@ -39,7 +40,7 @@ namespace Nucleus.Integrations.Facepunch.Tests
     /// deadlocked inside steamclient64, the main thread holding a Steam lock while it waited on a Steam worker thread queued for that same
     /// lock. A later run in the same editor finds Steam still up, with domain reload on or off, and the editor's exit releases it.
     /// </remarks>
-    public class FacepunchPlayTests
+    public partial class FacepunchPlayTests
     {
         /// <summary>
         /// The longest any wait runs before it gives up, in seconds.
@@ -261,6 +262,8 @@ namespace Nucleus.Integrations.Facepunch.Tests
 
             foreach (List<int> receivedIndices in _receivedSequencedIndices)
                 receivedIndices.Clear();
+
+            StopDirectory();
 
             // Lets the destroyed peers close their links while Steam can still send the close.
             yield return null;
@@ -1649,15 +1652,16 @@ namespace Nucleus.Integrations.Facepunch.Tests
         /// Waits for a transport Task while pumping Steam's callbacks, failing the case rather than hanging when it does not complete.
         /// </summary>
         /// <param name="task">The task to wait on.</param>
+        /// <param name="seconds">The longest the wait runs, in seconds.</param>
         /// <returns>The coroutine driving the wait.</returns>
-        private static IEnumerator WaitForTask(Task task)
+        private static IEnumerator WaitForTask(Task task, float seconds = MaximumWaitSeconds)
         {
-            yield return WaitUntil(() => task.IsCompleted);
+            yield return WaitUntil(() => task.IsCompleted, seconds);
 
             if (task.IsFaulted)
                 throw task.Exception;
             if (!task.IsCompleted)
-                throw new TimeoutException($"A transport Task did not complete within {MaximumWaitSeconds} s.");
+                throw new TimeoutException($"A transport Task did not complete within {seconds} s.");
         }
 
         /// <summary>

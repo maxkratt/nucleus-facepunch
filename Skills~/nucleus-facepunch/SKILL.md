@@ -1,6 +1,6 @@
 ---
 name: nucleus-facepunch
-description: Covers the Nucleus Steam transport built on Facepunch.Steamworks (Steam Networking Sockets) for games on Steam. Explains FacepunchSockets and the Unity FacepunchTransport component, addressing (SteamId through Valve's relay, IpAddress dialled directly over IPv4 or IPv6, FakeIp for game servers), which Steam interface is used (SteamClient or SteamServer, whichever the game initialized), RemoteSteamId and RemoteAddress, ServerSteamId, who initializes, pumps and shuts down Steam, finding the host through a Steam lobby (SteamMatchmaking.CreateLobbyAsync, Lobby.SetGameServer, Lobby.GetGameServer, OnLobbyGameCreated, OnGameLobbyJoinRequested, +connect_lobby) and the Lobbies sample, SteamID identity, SteamTicketAuthenticator, ConnectingClientFilter, ClientAdmissionFilter and DenyClient, the Ban List and Quick Match samples, ConnectTimeoutMilliseconds, the SendFailed event, PerConnectionReceiveEnabled for IL2CPP servers, the minimum send rate of a SteamId server, slow leaves over SteamId, SetNetworkConditions on Steam, TryGetLinkStatus and SteamLinkStatus, send rate and send buffer settings, and testing on App ID 480. Load it when a project uses Facepunch.Steamworks for multiplayer, when code touches any of these names, when a Steam client cannot connect, or when someone asks how to join a friend, invite through Steam or run a Steam dedicated server with Nucleus.
+description: Covers the Nucleus Steam transport built on Facepunch.Steamworks (Steam Networking Sockets) for games on Steam. Explains FacepunchSockets and the Unity FacepunchTransport component, addressing (SteamId through Valve's relay, IpAddress dialled directly over IPv4 or IPv6, FakeIp for game servers), which Steam interface is used (SteamClient or SteamServer, whichever the game initialized), RemoteSteamId and RemoteAddress, ServerSteamId, who initializes, pumps and shuts down Steam, finding the host through a Steam lobby (SteamMatchmaking.CreateLobbyAsync, Lobby.SetGameServer, Lobby.GetGameServer, OnLobbyGameCreated, OnGameLobbyJoinRequested, +connect_lobby) and the Lobbies sample, SteamID identity, SteamTicketAuthenticator, ConnectingClientFilter, ClientAdmissionFilter and DenyClient, the Ban List and Quick Match samples, host migration (FacepunchHostMigration, FacepunchSessionHost, HostedAddress, a newfarm directory, Nucleus Pro), ConnectTimeoutMilliseconds, the SendFailed event, PerConnectionReceiveEnabled for IL2CPP servers, the minimum send rate of a SteamId server, slow leaves over SteamId, SetNetworkConditions on Steam, TryGetLinkStatus and SteamLinkStatus, send rate and send buffer settings, and testing on App ID 480. Load it when a project uses Facepunch.Steamworks for multiplayer, when code touches any of these names, when a Steam client cannot connect, or when someone asks how to join a friend, invite through Steam or run a Steam dedicated server with Nucleus.
 ---
 
 # Nucleus over Steam with Facepunch.Steamworks
@@ -51,6 +51,15 @@ The Lobbies sample (`LobbiesPanel`) shows the whole flow, including joining by t
 - With Ticket Authentication on, `FacepunchTransport.ClientAdmissionFilter`, a `bool (Connection, ulong steamId)`, is asked before the client waits for its ticket; call `ServerManager.DenyClient(connection, notice)` first to tell the client why. The Ban List and Quick Match samples use it.
 - Maximum Connections (at least 1 in the inspector) refuses at accept once the server is full. A host's own client takes one place.
 
+## Host migration
+
+- Needs Nucleus Pro; with Free, `ServerManager.IsHostMigrationAvailable` is false and session calls return false.
+- Add `FacepunchHostMigration` beside `FacepunchTransport` (it requires one). It is the Steam subclass of Nucleus's `NetworkHostMigration`: set the directory (`DirectoryAddress`, `DirectoryPort`, the public `newfarm.nucleus-networking.com:47778` by default), then start and join as usual. A server opens a session once it runs, clients learn `SessionId` on joining, and when the host goes a survivor is elected and the rest rejoin it.
+- The new host's credential follows `Addressing`: its user SteamID; `HostedAddress` (else the Bind Address, else the machine's first IPv4) with the Port, at most 64 characters; or the fake address Steam grants it. Every peer must use the same `Addressing`.
+- Fake IP: one grant per Steam start on app 480, so a peer promoted over Fake IP needs a fresh Steam start. A refused grant fails the attempt at once (`LocalFailure`).
+- Over SteamId a host's leave reaches peers seconds late and a crash only after the Idle Timeout; over `IpAddress` both are quick.
+- `FacepunchSessionHost(facepunchSockets)` is the `ISessionHost` for driving `NewfarmHostMigration` directly. A join refused by the host returns `CredentialUnreachable`; one nobody answers returns `LocalFailure` after the shorter of the budget and `ConnectTimeoutMilliseconds`.
+
 ## Behaviour worth knowing
 
 - **IL2CPP servers:** turn on Per-Connection Receive (`PerConnectionReceiveEnabled`). Facepunch's `SocketManager.Receive` allocates 232 bytes per message under IL2CPP; receiving each client through its own call avoids it. No difference on Mono.
@@ -61,7 +70,7 @@ The Lobbies sample (`LobbiesPanel`) shows the whole flow, including joining by t
 - Kick reasons arrive: a kick closes with Steam's linger. Close reasons are logged once per drop.
 - A reliable send Steam refuses (send buffer full) closes the link and is logged naming the send buffer. Raise `SendBufferSizeBytes` for large bursts.
 - `SetNetworkConditions` simulates latency and loss only; jitter, reordering and duplication are logged as ignored. It is process wide, and the host's own client is unaffected.
-- A FakeIp grant can come seconds after a game server's logon; `ServerFakeAddress` is null until then, and a slow grant logs a warning, then applies.
+- A FakeIp grant can come seconds after a game server's logon; `ServerFakeAddress` is null until then and again once the server stops, and a slow grant logs a warning, then applies.
 - Call Facepunch only while `SteamClient.IsValid` (or `SteamServer.IsValid`): some calls, `NetAddress.ToString()` among them, crash the process after `Shutdown`.
 
 Every field, default and launch argument: [references/settings.md](references/settings.md).

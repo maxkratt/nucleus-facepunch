@@ -1,5 +1,10 @@
 # Changelog
 
+## Nucleus Facepunch.Steamworks 0.5.0
+- New host migration, with Nucleus Pro: `FacepunchHostMigration` beside `FacepunchTransport` keeps a session alive across the loss of its host through a newfarm directory, over SteamID, IP address or fake IP. Its Hosted Address names where an IP address host is reached.
+- New `FacepunchSessionHost`, the Steam side of a handover for driving `NewfarmHostMigration` directly. A join the host refuses reports `CredentialUnreachable`; one nobody answers reports `LocalFailure`.
+- `FacepunchSockets.ServerFakeAddress` reads `null` again once the server stops.
+
 ## Nucleus Facepunch.Steamworks 0.4.0
 - New `FacepunchSockets.SendFailed` event, raised with the side, the Connection, the channel and Steam's `Result` each time Steam refuses a message. `RefusedReliableSendCount` and `RefusedUnreliableSendCount` count the same refusals and are now read only.
 - New `FacepunchSockets.ConnectTimeoutMilliseconds`: the longest a client waits for its link to open before giving up. Zero, the default, leaves it to the Connecting Timeout. It is held by the transport, so unlike Steam's timeout it never touches links already open.

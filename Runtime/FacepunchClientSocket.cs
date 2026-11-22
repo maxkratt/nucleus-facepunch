@@ -46,6 +46,10 @@ namespace Nucleus.Integrations.Facepunch
         /// </summary>
         private uint _connectNumber;
         /// <summary>
+        /// The budget the running connect was given, in milliseconds, kept for its log since the setting may change while it runs.
+        /// </summary>
+        private uint _connectTimeoutMilliseconds;
+        /// <summary>
         /// The client's link to a server, or <see langword="null"/> when the client is not linked over Steam.
         /// </summary>
         private ConnectionManager _connectionManager;
@@ -261,7 +265,7 @@ namespace Nucleus.Integrations.Facepunch
                 if (expiredConnectNumber != _connectNumber || Connection.LocalState is not LocalConnectionState.Connecting)
                     continue;
 
-                Logger<FacepunchClientSocket>.LogWarning($"Could not connect to [{DescribeTarget()}] within [{_facepunchSockets.ConnectTimeoutMilliseconds}] ms, so the client gave up.");
+                Logger<FacepunchClientSocket>.LogWarning($"Could not connect to [{DescribeTarget()}] within [{_connectTimeoutMilliseconds}] ms, so the client gave up.");
                 Stop();
 
                 return;
@@ -540,13 +544,13 @@ namespace Nucleus.Integrations.Facepunch
 
             _connectNumber++;
 
-            uint connectTimeoutMilliseconds = _facepunchSockets.ConnectTimeoutMilliseconds;
+            _connectTimeoutMilliseconds = _facepunchSockets.ConnectTimeoutMilliseconds;
 
-            if (connectTimeoutMilliseconds is FacepunchSockets.UnsetConnectTimeoutMilliseconds)
+            if (_connectTimeoutMilliseconds is FacepunchSockets.UnsetConnectTimeoutMilliseconds)
                 return;
 
             _connectTimeoutCancellationTokenSource = new();
-            _ = ExpireConnectAsync(_connectNumber, (int)Math.Min(connectTimeoutMilliseconds, int.MaxValue), _connectTimeoutCancellationTokenSource.Token);
+            _ = ExpireConnectAsync(_connectNumber, (int)Math.Min(_connectTimeoutMilliseconds, int.MaxValue), _connectTimeoutCancellationTokenSource.Token);
         }
 
         /// <summary>
@@ -635,6 +639,7 @@ namespace Nucleus.Integrations.Facepunch
             _isLoopback = false;
             _isDialHeld = false;
             _isLinkDropDue = false;
+            _connectTimeoutMilliseconds = FacepunchSockets.UnsetConnectTimeoutMilliseconds;
             IsLastConnectRefused = false;
             _facepunchSockets = null;
 

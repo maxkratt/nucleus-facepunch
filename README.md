@@ -1,6 +1,6 @@
 ![Nucleus Facepunch.Steamworks: SteamID relay, Fake IP game servers, IPv4 / IPv6](Documentation~/banner.svg)
 
-A Steam Networking Sockets transport for the Nucleus netcode engine, built on [Facepunch.Steamworks](https://github.com/Facepunch/Facepunch.Steamworks) 2.5.2. Players host and join each other by SteamID through Valve's relay, dedicated servers run as Steam game servers behind a fake IP, and two processes can also dial each other by IPv4 or IPv6 address.
+A Steam Networking Sockets transport for the Nucleus netcode engine, built on [Facepunch.Steamworks](https://github.com/Facepunch/Facepunch.Steamworks) 2.5.2. Players host and join each other by SteamID through Valve's relay, dedicated servers run as Steam game servers behind a fake IP, and two processes can also dial each other by IPv4 or IPv6 address. With Nucleus Pro, a session survives losing its host.
 
 ## Requirements
 
@@ -96,7 +96,7 @@ These live on `FacepunchSockets`, which `FacepunchTransport.FacepunchSockets` an
 - `ConnectTimeoutMilliseconds`, the longest a client waits for its link to open before giving up. Zero (`UnsetConnectTimeoutMilliseconds`, the default) leaves it to the Connecting Timeout. Unlike that, it is held by this transport, so changing it never touches links already open.
 - `SendFailed`, raised with `(Invoker, Connection, Channel, Result)` each time Steam refuses a message and the matching refused count goes up. A refused unreliable message is dropped; a refused reliable one closes its link once the handlers return. `Result.LimitExceeded` means the send buffer is full.
 - `ServerSteamId`, the SteamID of the server this peer runs, which clients set as their `RemoteSteamId`; `UnsetSteamId` (0) while it is not listening.
-- `ServerFakeAddress`, the address Steam grants a Fake IP server once it is ready. A game server's grant can come after its logon, seconds after the start; a slow grant is logged as a warning and applied when it arrives.
+- `ServerFakeAddress`, the address Steam grants a Fake IP server once it is ready. A game server's grant can come after its logon, seconds after the start; a slow grant is logged as a warning and applied when it arrives. It reads `null` again once the server stops; Steam grants one address per process, so a restarted server gets the same one back.
 - `TryGetLinkStatus(connection, out SteamLinkStatus)`, Steam's ping, connection quality and pending bytes for one link, as read-only properties. On a server, pass a remote client's Connection; on a client, either its own Connection or its server Connection. Facepunch allocates 96 to 192 bytes on each read, so poll it a few times a second, not every frame.
 - `SetNetworkConditions` simulates latency and loss through Steam's own settings, mid-session too. They are process wide, so the transport clears them from Steam when it shuts down, and the host's own client is never delayed: judge lag from a separate client.
 - `RefusedReliableSendCount`, `RefusedUnreliableSendCount`, `LargestReliablePacketBytes`, `LargestUnreliablePacketBytes` and `ServerReceiveMicroseconds`, for diagnostics.
@@ -139,6 +139,24 @@ A server listening by Steam ID sends each client at the **minimum** send rate, n
 #### Leaving over Steam ID
 
 A client that leaves a Steam ID server is dropped on the server 3 to 8 seconds later, with the right close reason, against a few milliseconds over IP Address. Steam's peer-to-peer route delivers the close late; the transport closes its side at once. A kick reaches the client in about half a second. Game logic that must react to a leave at once should send its own message before leaving.
+
+## Host migration
+
+Needs Nucleus Pro. With a Free `Nucleus.dll` the component compiles, `ServerManager.IsHostMigrationAvailable` reads `false` and every session call returns `false`.
+
+Put `FacepunchHostMigration` beside `FacepunchTransport`; having it there turns host migration on. Start and join as usual: a server opens a session with the directory once it runs, every client that joins is told the session, and when the host leaves or crashes the directory elects a survivor, which starts hosting while the others rejoin it. `StartHostingSessionAsync`, `JoinSessionAsync(sessionId)` and `TrySurrenderHostingSession` drive the directory directly, and `SessionId` is what a player needs to find the session again.
+
+| Setting | Default | What it does |
+|---|---|---|
+| Directory Address | `newfarm.nucleus-networking.com` | The newfarm directory the session registers with. The public one is free; a host name is looked up each time a session opens or is joined. |
+| Directory Port | `47778` | The port the directory listens on. |
+| Hosted Address | empty | IP Address only. The address other peers reach this peer at when it hosts, such as a public address with a forwarded port. Empty uses the Bind Address, or this machine's own IPv4 address, which only reaches the same network. Address and port together must fit 64 characters. |
+
+Where a new host is reached follows Addressing: its SteamID, its Hosted Address and Port, or the fake address Steam grants it. Every peer in a session must use the same Addressing.
+
+- **Fake IP:** Steam grants one fake address per Steam start, and on app 480 it does not grant a second, so a peer promoted over Fake IP needs its Steam freshly started. A refused grant ends the hosting attempt at once rather than waiting out the budget.
+- **Over Steam ID, a host's leave reaches the others seconds late** (see [Leaving over Steam ID](#leaving-over-steam-id)), and a crashed host is only noticed after the Idle Timeout. Over IP Address both are near instant.
+- `FacepunchSessionHost` is the part that is Steam (listen, name the address, connect, leave), for driving `NewfarmHostMigration` yourself outside the component.
 
 ## Samples
 
