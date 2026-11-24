@@ -1,5 +1,8 @@
 # Changelog
 
+## Nucleus Facepunch.Steamworks 0.5.1
+- A server started on Fake IP with `FacepunchHostMigration` now opens its session once Steam grants it an address, where before it ran without one and logged `ServerAddressUnavailable`.
+
 ## Nucleus Facepunch.Steamworks 0.5.0
 - New host migration, with Nucleus Pro: `FacepunchHostMigration` beside `FacepunchTransport` keeps a session alive across the loss of its host through a newfarm directory, over SteamID, IP address or fake IP. Its Hosted Address names where an IP address host is reached.
 - New `FacepunchSessionHost`, the Steam side of a handover for driving `NewfarmHostMigration` directly. A join the host refuses reports `CredentialUnreachable`; one nobody answers reports `LocalFailure`.

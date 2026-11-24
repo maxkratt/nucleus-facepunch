@@ -144,7 +144,7 @@ A client that leaves a Steam ID server is dropped on the server 3 to 8 seconds l
 
 Needs Nucleus Pro. With a Free `Nucleus.dll` the component compiles, `ServerManager.IsHostMigrationAvailable` reads `false` and every session call returns `false`.
 
-Put `FacepunchHostMigration` beside `FacepunchTransport`; having it there turns host migration on. Start and join as usual: a server opens a session with the directory once it runs, every client that joins is told the session, and when the host leaves or crashes the directory elects a survivor, which starts hosting while the others rejoin it. `StartHostingSessionAsync`, `JoinSessionAsync(sessionId)` and `TrySurrenderHostingSession` drive the directory directly, and `SessionId` is what a player needs to find the session again.
+Put `FacepunchHostMigration` beside `FacepunchTransport`; having it there turns host migration on. Start and join as usual: a server opens a session with the directory once it runs, every client that joins is told the session, and when the host leaves or crashes the directory elects a survivor, which starts hosting while the others rejoin it. `StartHostingSessionAsync`, `JoinSessionAsync(sessionId)` and `TrySurrenderHostingSession` drive the directory directly, and `SessionId` is what a player needs to find the session again. A Fake IP server opens its session once Steam grants its address, a few seconds after it starts.
 
 | Setting | Default | What it does |
 |---|---|---|
